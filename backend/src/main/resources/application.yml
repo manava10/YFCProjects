@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: yfc-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/yfc}
+    username: ${DB_USER:yfc}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+server:
+  port: ${PORT:8080}
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+yfc:
+  database:
+    auth-mode: ${DB_AUTH_MODE:password}
+    aws-region: ${AWS_REGION:}
+    maximum-pool-size: ${DB_POOL_MAX_SIZE:5}
