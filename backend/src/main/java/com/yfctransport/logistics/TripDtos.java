@@ -43,4 +43,23 @@ class TripDtos {
       @Size(max = 1000) String discrepancyReason) {}
 
   record Cancel(@NotNull UUID eventId, @NotBlank @Size(max = 1000) String reason) {}
+
+  record Reassign(
+      @NotNull UUID eventId,
+      @NotNull UUID truckId,
+      @NotNull UUID driverId,
+      @NotBlank @Size(max = 1000) String reason) {}
+
+  record WeightCorrection(
+      @NotNull UUID correctionId,
+      @NotNull @DecimalMin("0.001") @Digits(integer = 9, fraction = 3) BigDecimal loadedGross,
+      @NotNull @DecimalMin("0.000") @Digits(integer = 9, fraction = 3) BigDecimal loadedTare,
+      @NotNull @DecimalMin("0.001") @Digits(integer = 9, fraction = 3) BigDecimal receivedGross,
+      @NotNull @DecimalMin("0.000") @Digits(integer = 9, fraction = 3) BigDecimal receivedTare,
+      @NotNull @DecimalMin("0.000") @Digits(integer = 9, fraction = 3) BigDecimal acceptedQuantity,
+      @Size(max = 1000) String discrepancyReason,
+      @NotBlank @Size(max = 1000) String reason,
+      @NotBlank @Size(max = 500) String evidenceReference) {}
+
+  record Decision(@NotNull UUID eventId, @NotBlank @Size(max = 1000) String reason) {}
 }

@@ -17,10 +17,10 @@ This phase adds supplier purchasing, yard receipts, direct deliveries and stock 
 POST `/api/v1/yards`
 
 ```json
-{"branchId":"BRANCH_UUID","code":"YARD01","name":"Main yard","address":"Yard address"}
+{"branchId":"BRANCH_UUID","code":"YARD01","name":"Main yard","address":"Yard address","kind":"OPERATING"}
 ```
 
-GET `/api/v1/yards?page=0&size=20` lists yards. SUPER_ADMIN can PATCH `/api/v1/yards/{id}/status` with `{"active":false}`. Inactive yards retain history and allow reservation release, but block new purchasing, reservations, receipts and issues. Yard master edits, deletion and cross-branch transfers are not included. Same-branch yard transfers use the controlled correction workflow.
+GET `/api/v1/yards?page=0&size=20` lists yards. SUPER_ADMIN can PATCH `/api/v1/yards/{id}/status` with `{"active":false}`. Inactive yards retain history and allow reservation release, but block new purchasing, reservations, receipts and issues. Optional `kind` is `OPERATING` (default) or `QUARANTINE`. Purchases, reservations and issues require an operating yard. Yard kind cannot be changed after creation. Yard master edits and deletion are not included. Quantity-only transfers between operating yards may cross branches; quarantine involvement stays in the same branch. See [returns and stock adjustments](returns-and-stock-adjustments.md).
 
 ## 2. Issue a purchase order
 
@@ -115,8 +115,8 @@ Writes, balance updates and audit records share one transaction. Order allocatio
 
 List endpoints return arrays, accept zero-based `page` and `size` (1–100), and sort newest first with UUID tie-breaking. Persisted inventory fields use lower-case snake_case; fulfillment summary fields use camelCase as shown. Audit and document UUIDs are stable; printed/statutory document numbering is not provided.
 
-Quarantined-stock yards, cross-branch transfers, receipt reversal, valuation, tax invoices, purchase-specific document attachments and customer/driver portals remain later milestones. Opening stock, supplier returns, non-resalable customer returns, approved reversals and same-branch transfers are available in V16. Independently approved customer returns and count corrections are available in V11; private attachments for trips/incidents/fuel/expenses are available in V10. Use the opening-stock workflow for genuine zero-balance yards; do not invent purchases to represent opening balances. There are no automatic external notifications or new environment settings.
+Valuation, tax invoices, purchase-specific document attachments and customer/driver portals remain later milestones. Standalone purchase-receipt reversal is available in V17: POST `/api/v1/purchase-receipts/{id}/reversals`, then independent ACCOUNTS review on `/api/v1/purchase-receipt-reversals/{id}/approve|reject`. Approval subtracts the receipt from the PO totals and, for yard receipts, removes accepted stock if it is still available. Trip delivery receipts, closed purchases, receipts claimed by a billing preparation, and receipts whose accepted quantity is already consumed by supplier returns cannot be reversed this way. Opening stock, supplier returns, non-resalable customer returns, approved reversals and same-branch transfers are available in V16. Quarantine yards and quantity-only cross-branch operating transfers are available in V19. Independently approved customer returns and count corrections are available in V11; private attachments for trips/incidents/fuel/expenses/stock openings, transfers and adjustments are available in V10/V19. Use the opening-stock workflow for genuine zero-balance yards; do not invent purchases to represent opening balances. There are no automatic external notifications or new environment settings.
 
 ## Controlled corrections and customer returns
 
-Accepted customer material can return into same-branch yards after independent approval, including non-resalable returns that consume capacity only. Physical stock count increases/decreases, opening stock, same-branch transfers, supplier returns from yard purchases and approved reversals are also supported. See [returns and stock adjustments](returns-and-stock-adjustments.md). Valuation and quarantined yards remain pending.
+Accepted customer material can return into same-branch yards after independent approval, including non-resalable returns that consume capacity only unless they enter a quarantine yard. Physical stock count increases/decreases, opening stock, same-branch and cross-branch operating transfers, supplier returns from yard purchases, approved reversals and standalone purchase-receipt reversals are also supported. See [returns and stock adjustments](returns-and-stock-adjustments.md). Valuation remains pending.

@@ -152,7 +152,25 @@ POST `/api/v1/trips/{id}/cancel`
 
 Cancellation is allowed only in ALLOCATED, LOADING or LOADED. It releases truck/driver assignment and the trip's source hold. It preserves the underlying yard reservation, which can subsequently be released through the inventory API. A replacement uses a new trip UUID.
 
-After DISPATCHED, cancellation is rejected. Returns, breakdown reassignment, failed delivery, crew substitutions and approved weight corrections require a later incident/return workflow. There is no automatic inventory restoration.
+After DISPATCHED, cancellation is rejected. POST `/api/v1/trips/{id}/reassignments` substitutes truck and/or driver while the trip is DISPATCHED, ARRIVED or UNLOADING. The replacement crew must be free, active and compliant in the order branch, and the recorded load must fit the replacement truck. Exact event retries are safe. Delivery still records actual weights; there is no automatic inventory restoration on reassignment.
+
+Delivered-trip weighbridge mistakes use an independently reviewed correction rather than editing the original load/delivery event. POST `/api/v1/trips/{id}/weight-corrections`:
+
+```json
+{
+  "correctionId":"CLIENT_GENERATED_UUID",
+  "loadedGross":41.000,
+  "loadedTare":12.000,
+  "receivedGross":40.000,
+  "receivedTare":12.000,
+  "acceptedQuantity":27.000,
+  "discrepancyReason":"Weighbridge slip recut after independent check",
+  "reason":"Plant slip used the wrong tare",
+  "evidenceReference":"Corrected weighbridge slip"
+}
+```
+
+OPERATIONS submit. ACCOUNTS approve or reject with POST `/api/v1/trips/weight-corrections/{id}/approve` or `/reject`. The reviewer must be a different username. One PENDING correction may claim a trip. Approval rewrites the trip and linked dispatch weights. Ordered-quantity billing is unchanged. Yard trips restore or issue the loaded-quantity delta against the original reservation. Direct trips rewrite the linked purchase receipt. Customer-return capacity still cannot exceed the corrected accepted quantity. Trip-created purchase receipts cannot be reversed through the receipt-reversal API; correct the trip weights instead.
 
 ## Integration and compatibility
 

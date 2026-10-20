@@ -19,4 +19,9 @@ public interface TripSupply {
       String reason);
 
   void cancel(UUID trip);
+
+  void correctYardIssue(UUID trip, BigDecimal newLoaded, UUID movementId, String reference);
+
+  void correctDirectReceipt(
+      UUID trip, BigDecimal loaded, BigDecimal received, BigDecimal accepted, String reason);
 }

@@ -220,14 +220,16 @@ class AdjustmentService implements StockAdjustments {
                 reason,
                 evidence,
                 resalable));
-    var y = yard(yardId, false);
+    yard(yardId, false);
     var replay = retry(id, payload);
     if (replay != null) return replay;
-    yard(yardId, true);
+    var locked = yard(yardId, true);
     materials.getActive(material);
     date(day);
-    if (!branch.equals(y.get("branch_id")))
+    if (!branch.equals(locked.get("branch_id")))
       throw conflict("Return yard must belong to the order branch");
+    if (resalable && !"OPERATING".equals(locked.get("kind")))
+      throw conflict("Resalable returns must enter an operating yard");
     BigDecimal used =
         db.queryForObject(
             "select coalesce(sum(quantity),0) from stock_adjustments where trip_id=? and status in"
@@ -296,7 +298,10 @@ class AdjustmentService implements StockAdjustments {
       if (expected != null && onHand.compareTo(expected) != 0)
         throw conflict("Stock changed since count request; reject and submit a fresh count");
       String kind = (String) record.get("kind");
-      boolean usable = !kind.equals("CUSTOMER_RETURN") || Boolean.TRUE.equals(record.get("resalable"));
+      boolean usable =
+          !kind.equals("CUSTOMER_RETURN")
+              || Boolean.TRUE.equals(record.get("resalable"))
+              || "QUARANTINE".equals(y.get("kind"));
       if (usable) {
         BigDecimal next = kind.equals("DECREASE") ? onHand.subtract(qty) : onHand.add(qty);
         if (next.compareTo(reserved) < 0)
@@ -318,7 +323,8 @@ class AdjustmentService implements StockAdjustments {
         actor());
     if (approve
         && (!"CUSTOMER_RETURN".equals(record.get("kind"))
-            || Boolean.TRUE.equals(record.get("resalable")))) {
+            || Boolean.TRUE.equals(record.get("resalable"))
+            || "QUARANTINE".equals(y.get("kind")))) {
       String kind =
           switch ((String) record.get("kind")) {
             case "CUSTOMER_RETURN" -> "RETURN";

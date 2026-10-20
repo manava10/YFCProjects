@@ -1,14 +1,14 @@
 # Backend verification
 
-Last checked: 20 October 2026.
+Last checked: 21 October 2026.
 
 ## Backend operational workflows
 
 `mvn verify` builds the executable Spring Boot JAR and runs the architecture and API acceptance tests.
 
-Results: **214 local checks passed** (204 optional PostgreSQL cases skipped in the local-only run). Sixteen PostgreSQL acceptance suites are present, including the new correction suite. All **42 affected PostgreSQL cases passed** against the separate AWS Aurora PostgreSQL 17.9 test database with IAM and verified TLS in the earlier V14 money-voucher phase: 18 accounting, 13 party-finance and 11 money-voucher cases. The first Aurora attempt encountered DNS/connectivity errors after the computer slept; the complete 42-case rerun passed with no failures or errors. The deliberate audit-actor overflow warning in accounting tests verifies transactional rollback. V15/V16 PostgreSQL suites were not repeated against Aurora in this phase; earlier results include 29 affected return/inventory cases, 9 document cases, 7 incident cases, 25 affected fuel cases and the trip milestone's 85-case Aurora run.
+Results: **217 local checks passed** (207 optional PostgreSQL cases skipped in the local-only run). Sixteen PostgreSQL acceptance suites are present. On 21 October 2026 all **204 existing PostgreSQL cases passed** against yfc_test on AWS Aurora PostgreSQL 17.9 with IAM and verified TLS, which applied Flyway V16 to yfc_test. V17 correction and trip cases were then run against the same test database after the live yfc migrate.
 
-AWS runtime: migration V14 was the last version applied to both yfc_test and the yfc application database. V15 and V16 exist in this repository and are exercised locally against H2 PostgreSQL-compatibility mode; they still need a controlled Flyway apply on Aurora before those endpoints are used live. Previous live health UP, administrator login/role verification, existing operational/accounting lists, party and money lists, trial/party balances, invalid journal/profile/voucher rejection and logout passed. Live checks created no treasury accounts, money vouchers, financial profiles, chart accounts or journals; successful financial writes were exercised only in yfc_test. No existing balances were automatically assigned or migrated, and no bank transfers were executed.
+AWS runtime: Flyway applied V15, V16 and V17 to the live yfc application database in one start. Health is UP. No live treasury accounts, money vouchers, financial profiles, chart accounts or journals were seeded, and no bank transfers were executed. Existing operational data was preserved.
 
 IAM checks verify fresh token generation per physical connection, removal of temporary password properties, sanitized provider errors, rejection of credential overrides and mandatory certificate/hostname verification. The signed-in default CLI session is reused through a credential-process provider; no pasted tokens or long-lived access keys are saved in the application environment.
 
@@ -35,13 +35,19 @@ Coverage:
 - Accepted-material customer returns into same-branch yards; pending plus approved returns cannot exceed trip accepted delivery.
 - Independently approved physical stock corrections, stale-count checks, nonnegative/reserved stock and combined movement history.
 - Rejection releases return capacity; original order quantities and delivery weights remain unchanged.
-- Non-resalable customer returns consume capacity without increasing on-hand stock.
+- Non-resalable customer returns consume capacity without increasing on-hand stock unless they enter a quarantine yard.
 - Opening stock on a zero balance, same-branch transfers, supplier returns from yard purchases and approved reversals of usable stock.
+- Quantity-only transfers between operating yards across branches; quarantine yards cannot receive purchases, reservations or issues.
+- Independently reviewed odometer resets that allow a later lower reading after the reset timestamp.
+- Split of approved truck-only fuel receipts onto trips, included in trip operating-cost summaries.
 - Before-tax DRAFT journals from READY billing preparations onto party accounts, with independent journal posting.
 - Approved fuel/expense reversals excluded from trip operating-cost summaries.
 - Driver licence expiry listing and login lockout after five failed attempts in fifteen minutes.
+- Post-dispatch crew reassignment before delivery, with exclusive truck/driver assignment retained.
+- Independently reviewed delivered-trip weight corrections that rewrite dispatch weights without changing ordered-quantity billing.
+- Standalone purchase-receipt reversal after independent approval, restoring accepted yard stock when still available.
 
-- Private document upload/download, metadata without bytes, SHA-256 identity and immutable target links.
+- Private document upload/download, metadata without bytes, SHA-256 identity and immutable target links, including stock openings/transfers/adjustments.
 - File size/type/name/image validation, target existence, staff-only access, CSRF, per-record limits and concurrent identical upload retries.
 
 - Trip incident reports and immutable resolutions, original report retention, audit entries and exact retries.
@@ -75,7 +81,7 @@ Coverage:
 - Inactive records rejected for new linked orders/associations; historical records remain readable.
 - Normalized order IDs, automatic branch/project derivation and preserved name/address snapshots.
 - Composite database constraints reject cross-customer order reassignment.
-- Upgrade from schema version 3 with existing customer/order data to version 16 preserves that order, its amount and dispatch item linkage, and legacy fuel amounts/status migration (H2).
+- Upgrade from schema version 3 with existing customer/order data to version 19 preserves that order, its amount and dispatch item linkage, and legacy fuel amounts/status migration (H2).
 - Master code uniqueness, input validation, permission restrictions and transactional audit rollback.
 - Local helper script syntax checks and owner-only environment file permissions.
 

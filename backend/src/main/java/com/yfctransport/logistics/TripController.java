@@ -78,4 +78,37 @@ class TripController {
   Map<String, Object> cancel(@PathVariable UUID id, @Valid @RequestBody TripDtos.Cancel r) {
     return trips.cancel(id, r);
   }
+
+  @PostMapping("/{id}/reassignments")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  Map<String, Object> reassign(@PathVariable UUID id, @Valid @RequestBody TripDtos.Reassign r) {
+    return trips.reassign(id, r);
+  }
+
+  @PostMapping("/{id}/weight-corrections")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  ResponseEntity<Map<String, Object>> weight(
+      @PathVariable UUID id, @Valid @RequestBody TripDtos.WeightCorrection r) {
+    var result = trips.correct(id, r);
+    return ResponseEntity.status(Boolean.TRUE.equals(result.get("replayed")) ? 200 : 201)
+        .body(result);
+  }
+
+  @GetMapping("/weight-corrections/{id}")
+  Map<String, Object> weight(@PathVariable UUID id) {
+    return trips.correction(id);
+  }
+
+  @PostMapping("/weight-corrections/{id}/approve")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> approveWeight(
+      @PathVariable UUID id, @Valid @RequestBody TripDtos.Decision r) {
+    return trips.decideCorrection(id, r, true);
+  }
+
+  @PostMapping("/weight-corrections/{id}/reject")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> rejectWeight(@PathVariable UUID id, @Valid @RequestBody TripDtos.Decision r) {
+    return trips.decideCorrection(id, r, false);
+  }
 }

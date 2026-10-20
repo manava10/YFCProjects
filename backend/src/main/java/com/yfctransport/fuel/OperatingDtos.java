@@ -97,4 +97,25 @@ class OperatingDtos {
       @NotNull @DecimalMin("0.01") @Digits(integer = 8, fraction = 2) BigDecimal expectedPrice,
       @NotNull @DecimalMin("0.01") @Digits(integer = 8, fraction = 2) BigDecimal newPrice,
       @NotBlank @Size(max = 1000) String reason) {}
+
+  record Review(@NotNull UUID eventId, @NotBlank @Size(max = 1000) String reason) {}
+
+  record OdometerReset(
+      @NotNull UUID resetId,
+      @NotNull UUID truckId,
+      @NotNull @DecimalMin("0.0") @Digits(integer = 10, fraction = 1) BigDecimal newReading,
+      @NotNull Instant resetAt,
+      @NotBlank @Size(max = 1000) String reason,
+      @NotBlank @Size(max = 500) String evidenceReference) {
+    OdometerReset {
+      if (resetAt != null) resetAt = resetAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    }
+  }
+
+  record FuelAllocation(
+      @NotNull UUID allocationId,
+      @NotNull UUID tripId,
+      @NotNull @DecimalMin("0.001") @Digits(integer = 9, fraction = 3) BigDecimal quantityLitres,
+      @NotBlank @Size(max = 1000) String reason,
+      @NotBlank @Size(max = 500) String evidenceReference) {}
 }

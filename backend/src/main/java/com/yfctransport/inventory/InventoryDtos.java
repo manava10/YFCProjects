@@ -15,7 +15,15 @@ class InventoryDtos {
       @NotNull UUID branchId,
       @NotBlank @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9_-]{1,29}") String code,
       @NotBlank @Size(max = 160) String name,
-      @NotBlank @Size(max = 500) String address) {}
+      @NotBlank @Size(max = 500) String address,
+      String kind) {
+    YardInput {
+      String resolved = kind == null || kind.isBlank() ? "OPERATING" : kind.strip().toUpperCase();
+      if (!resolved.equals("OPERATING") && !resolved.equals("QUARANTINE"))
+        throw new IllegalArgumentException("Yard kind must be OPERATING or QUARANTINE");
+      kind = resolved;
+    }
+  }
 
   record YardStatus(@NotNull Boolean active) {}
 

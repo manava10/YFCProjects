@@ -120,6 +120,8 @@ class CorrectionService {
           case "stock_reversals" -> get(table, id, "reversal_id", "stock_reversal_events");
           case "stock_openings" -> get(table, id, "opening_id", "stock_opening_events");
           case "stock_transfers" -> get(table, id, "transfer_id", "stock_transfer_events");
+          case "purchase_receipt_reversals" ->
+              get(table, id, "reversal_id", "purchase_receipt_reversal_events");
           default -> get(table, id, "return_id", "supplier_return_events");
         };
     getter.put("replayed", true);
@@ -241,10 +243,12 @@ class CorrectionService {
       throw conflict("A different user must review the reversal");
     var adj = one("stock_adjustments", (UUID) record.get("adjustment_id"), true);
     if (approve) {
-      yard((UUID) adj.get("yard_id"), true);
+      var sourceYard = yard((UUID) adj.get("yard_id"), true);
       materials.getActive((UUID) adj.get("material_id"));
       boolean usable =
-          !"CUSTOMER_RETURN".equals(adj.get("kind")) || Boolean.TRUE.equals(adj.get("resalable"));
+          !"CUSTOMER_RETURN".equals(adj.get("kind"))
+              || Boolean.TRUE.equals(adj.get("resalable"))
+              || "QUARANTINE".equals(sourceYard.get("kind"));
       if (usable) {
         BigDecimal qty = (BigDecimal) adj.get("quantity");
         BigDecimal delta = "DECREASE".equals(adj.get("kind")) ? qty : qty.negate();
@@ -370,8 +374,12 @@ class CorrectionService {
     UUID second = first.equals(r.fromYardId()) ? r.toYardId() : r.fromYardId();
     var a = yard(first, true);
     var b = yard(second, true);
-    if (!a.get("branch_id").equals(b.get("branch_id")))
-      throw conflict("Transfers must stay in the same branch");
+    var fromYard = first.equals(r.fromYardId()) ? a : b;
+    var toYard = first.equals(r.fromYardId()) ? b : a;
+    boolean sameBranch = fromYard.get("branch_id").equals(toYard.get("branch_id"));
+    if (!sameBranch
+        && (!"OPERATING".equals(fromYard.get("kind")) || !"OPERATING".equals(toYard.get("kind"))))
+      throw conflict("Cross-branch transfers are only allowed between operating yards");
     var from = stock(r.fromYardId(), r.materialId());
     if (((BigDecimal) from.get("on_hand"))
             .subtract((BigDecimal) from.get("reserved"))
@@ -509,6 +517,126 @@ class CorrectionService {
     }
     finish("supplier_returns", "supplier_return_events", "return_id", id, r, approve, "SUPPLIER_RETURN");
     return get("supplier_returns", id, "return_id", "supplier_return_events");
+  }
+
+  Map<String, Object> receiptReversal(UUID receipt, CorrectionController.ReversalInput r) {
+    String payload =
+        json.writeValueAsString(
+            List.of(receipt, r.reason().strip(), r.evidenceReference().strip()));
+    var replay = replay("purchase_receipt_reversals", r.reversalId(), payload);
+    if (replay != null) return replay;
+    var rec = one("purchase_receipts", receipt, true);
+    var p = one("purchase_orders", (UUID) rec.get("purchase_id"), true);
+    if (!Set.of("OPEN", "RECEIVED").contains((String) p.get("status")))
+      throw conflict("Closed purchases cannot reverse receipts");
+    if (db.queryForObject(
+            "select count(*) from trip_supply_claims where trip_id=?", Integer.class, receipt)
+        > 0)
+      throw conflict("Trip delivery receipts are reversed through a trip weight correction");
+    if (db.queryForObject(
+            "select count(*) from billing_source_claims where kind='PURCHASE_RECEIPT' and"
+                + " source_id=?",
+            Integer.class,
+            receipt)
+        > 0)
+      throw conflict("Cancel the billing preparation before reversing this receipt");
+    if (db.queryForObject(
+            "select count(*) from purchase_receipt_reversal_claims where receipt_id=?",
+            Integer.class,
+            receipt)
+        > 0) throw conflict("A reversal is already pending or approved for this receipt");
+    db.update(
+        "insert into"
+            + " purchase_receipt_reversals(id,receipt_id,reason,evidence_reference,submitted_by,create_payload)"
+            + " values(?,?,?,?,?,?)",
+        r.reversalId(),
+        receipt,
+        r.reason().strip(),
+        r.evidenceReference().strip(),
+        actor(),
+        payload);
+    db.update(
+        "insert into purchase_receipt_reversal_claims(receipt_id,reversal_id) values(?,?)",
+        receipt,
+        r.reversalId());
+    audit.record(
+        "PURCHASE_RECEIPT_REVERSAL_SUBMITTED",
+        "PURCHASE_RECEIPT_REVERSAL",
+        r.reversalId(),
+        "Receipt=" + receipt);
+    return get(
+        "purchase_receipt_reversals",
+        r.reversalId(),
+        "reversal_id",
+        "purchase_receipt_reversal_events");
+  }
+
+  Map<String, Object> decideReceipt(UUID id, CorrectionController.Decision r, boolean approve) {
+    var record = one("purchase_receipt_reversals", id, true);
+    String action = approve ? "APPROVE" : "REJECT";
+    if (replayEvent(
+        "purchase_receipt_reversal_events", r.eventId(), id, "reversal_id", action, r.reason())) {
+      var result =
+          get("purchase_receipt_reversals", id, "reversal_id", "purchase_receipt_reversal_events");
+      result.put("replayed", true);
+      return result;
+    }
+    if (!"PENDING".equals(record.get("status"))) throw conflict("Receipt reversal already reviewed");
+    if (actor().equals(record.get("submitted_by")))
+      throw conflict("A different user must review the receipt reversal");
+    if (approve) {
+      var rec = one("purchase_receipts", (UUID) record.get("receipt_id"), true);
+      var p = one("purchase_orders", (UUID) rec.get("purchase_id"), true);
+      if (!Set.of("OPEN", "RECEIVED").contains((String) p.get("status")))
+        throw conflict("Closed purchases cannot reverse receipts");
+      BigDecimal used =
+          db.queryForObject(
+              "select coalesce(sum(quantity),0) from supplier_returns where purchase_id=? and"
+                  + " status in ('PENDING','APPROVED')",
+              BigDecimal.class,
+              p.get("id"));
+      BigDecimal nextAccepted =
+          ((BigDecimal) p.get("accepted_quantity")).subtract((BigDecimal) rec.get("accepted_quantity"));
+      if (used.compareTo(nextAccepted) > 0)
+        throw conflict("Supplier returns already consume this receipt's accepted quantity");
+      BigDecimal nextReceived =
+          ((BigDecimal) p.get("received_quantity")).subtract((BigDecimal) rec.get("received_quantity"));
+      UUID yard = (UUID) p.get("yard_id");
+      if (yard != null && ((BigDecimal) rec.get("accepted_quantity")).signum() > 0) {
+        yard(yard, true);
+        apply(yard, (UUID) p.get("material_id"), ((BigDecimal) rec.get("accepted_quantity")).negate());
+        db.update(
+            "insert into"
+                + " execution_stock_movements(id,source_type,source_id,yard_id,material_id,kind,quantity,reference,recorded_by)"
+                + " values(?,?,?,?,?,'ADJUST_OUT',?,?,?)",
+            r.eventId(),
+            "RECEIPT_REVERSAL",
+            id,
+            yard,
+            p.get("material_id"),
+            rec.get("accepted_quantity"),
+            "Receipt reversal " + id,
+            actor());
+      }
+      db.update(
+          "update purchase_orders set received_quantity=?,accepted_quantity=?,status=? where id=?",
+          nextReceived,
+          nextAccepted,
+          nextReceived.signum() == 0
+              ? "OPEN"
+              : nextReceived.compareTo((BigDecimal) p.get("quantity")) == 0 ? "RECEIVED" : "OPEN",
+          p.get("id"));
+    }
+    finish(
+        "purchase_receipt_reversals",
+        "purchase_receipt_reversal_events",
+        "reversal_id",
+        id,
+        r,
+        approve,
+        "PURCHASE_RECEIPT_REVERSAL");
+    if (!approve) db.update("delete from purchase_receipt_reversal_claims where reversal_id=?", id);
+    return get("purchase_receipt_reversals", id, "reversal_id", "purchase_receipt_reversal_events");
   }
 
   private void finish(

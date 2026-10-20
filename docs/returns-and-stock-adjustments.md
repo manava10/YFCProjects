@@ -1,6 +1,6 @@
 # Customer returns and controlled stock adjustments
 
-Migration V11 adds independently reviewed physical stock corrections and customer returns into YFC yards. V16 adds approved reversals, non-resalable customer returns, opening stock, same-branch transfers and supplier returns from yard purchases. No new environment variables or AWS services are required. Quantities are tonnes, with up to three decimal places. This is a stock-quantity workflow; it does not issue invoices, credit notes, payments, valuation entries or accounting journals.
+Migration V11 adds independently reviewed physical stock corrections and customer returns into YFC yards. V16 adds approved reversals, non-resalable customer returns, opening stock, same-branch transfers and supplier returns from yard purchases. V19 adds OPERATING/QUARANTINE yard kinds and quantity-only transfers between operating yards across branches. No new environment variables or AWS services are required. Quantities are tonnes, with up to three decimal places. This is a stock-quantity workflow; it does not issue invoices, credit notes, payments, valuation entries or accounting journals.
 
 ## Roles and review
 
@@ -24,12 +24,12 @@ POST `/api/v1/trips/{tripId}/returns`
 }
 ```
 
-This records material already physically received into the yard. `resalable:true` means it is confirmed suitable for resale. `resalable:false` still consumes trip return capacity so the same delivered tonnes cannot be returned twice, but approval does not increase on-hand stock and creates no RETURN movement. Keep pending receipts segregated until approval. The endpoint is not a return authorisation for goods still at the customer, and it does not manage return trucking, dedicated quarantine yards or disposal.
+This records material already physically received into the yard. `resalable:true` means it is confirmed suitable for resale and must use an operating yard. `resalable:false` still consumes trip return capacity so the same delivered tonnes cannot be returned twice. Against an operating yard, approval does not increase on-hand stock and creates no RETURN movement. Against a quarantine yard, approval increases that yard's on-hand stock so held material is visible. Keep pending receipts segregated until approval. The endpoint is not a return authorisation for goods still at the customer, and it does not manage return trucking or disposal.
 
 Rules:
 
 - The source trip must be DELIVERED and belong to a material sale. TRANSPORT-only material is not YFC-owned inventory and cannot enter this return workflow.
-- The destination yard must be active and belong to the source order's branch. Any eligible yard in that branch can receive the material; cross-branch returns need a later workflow.
+- The destination yard must be active and belong to the source order's branch. Any eligible operating or quarantine yard in that branch can receive the material; cross-branch returns need a later workflow.
 - Material is derived from the trip's order item; callers cannot substitute another material.
 - `receivedOn` cannot be before the delivery date in Asia/Kolkata or after today.
 - Quantity must be positive and within the trip's accepted delivered quantity less all PENDING and APPROVED return requests.
@@ -40,7 +40,7 @@ Example: a trip has 30 tonnes loaded, 29 received and 28 accepted. Its lifetime 
 
 The first request returns 201. An exact retry with the same ID/fields returns 200 with `replayed:true`; conflicting reuse returns 409. Return IDs share the stock-adjustment ID namespace. The result has kind `CUSTOMER_RETURN`; review it using the stock-adjustment endpoints below.
 
-Return approval of a resalable request increases on-hand stock by the returned quantity, with movement kind RETURN. Non-resalable approval consumes capacity only. Reserved stock is unchanged. The original order quantity, billable quantity, delivered/accepted weights, purchase receipt and historical dispatch remain unchanged. Original supply allocations are not reopened; replacement deliveries require a later controlled workflow. Any customer credit/refund must eventually use the accounting workflow.
+Return approval of a resalable request increases on-hand stock by the returned quantity, with movement kind RETURN. Non-resalable approval into an operating yard consumes capacity only. Non-resalable approval into a quarantine yard increases that yard's on-hand stock with movement kind RETURN. Reserved stock is unchanged. The original order quantity, billable quantity, delivered/accepted weights, purchase receipt and historical dispatch remain unchanged. Original supply allocations are not reopened; replacement deliveries require a later controlled workflow. Any customer credit/refund must eventually use the accounting workflow.
 
 ## 2. Submit a physical stock-count correction
 
@@ -93,7 +93,7 @@ Use the same UUID for retries; a new event UUID is a new action. A successful ap
 
 Inventory request fields returned by these APIs use the existing snake_case convention; `replayed` and the `events` collection are additional fields. Internal retry payloads are not exposed. Adjustment movement kinds are RETURN, ADJUST_IN and ADJUST_OUT. Correction movement kinds are OPENING, TRANSFER_OUT, TRANSFER_IN, SUPPLIER_RETURN and REVERSAL. New adjustment rows include `adjustment_id`; older receipt/issue rows have that field null.
 
-Evidence remains a reference. Return evidence can point to a private document uploaded against the source trip. The private-document API does not yet accept STOCK_ADJUSTMENT as a target type.
+Evidence remains a reference. Return evidence can point to a private document uploaded against the source trip or, from V19, against the stock adjustment, transfer or opening itself.
 
 ## 5. Reverse an approved return or count
 
@@ -131,7 +131,7 @@ The yard and material must be active. On-hand must be zero at submission and aga
 
 GET `/api/v1/stock-openings/{id}` and GET `/api/v1/stock-openings?page=0&size=20`. Review with `/approve` or `/reject`.
 
-## 7. Transfer stock between yards in the same branch
+## 7. Transfer stock between yards
 
 POST `/api/v1/stock-transfers`
 
@@ -148,7 +148,7 @@ POST `/api/v1/stock-transfers`
 }
 ```
 
-Both yards must be active and belong to the same branch. Source available stock (on-hand minus reserved) must cover the quantity at submission and approval. The destination yard/material balance is created if absent. Approval writes TRANSFER_OUT at the source and TRANSFER_IN at the destination. Cross-branch transfers remain later work.
+Both yards must be active. Source available stock (on-hand minus reserved) must cover the quantity at submission and approval. The destination yard/material balance is created if absent. Approval writes TRANSFER_OUT at the source and TRANSFER_IN at the destination. Transfers between operating yards may cross branches and do not post an inter-branch journal; inventory remains quantity-only. A transfer that involves a quarantine yard must stay in the same branch.
 
 GET `/api/v1/stock-transfers/{id}` and GET `/api/v1/stock-transfers?page=0&size=20`. Review with `/approve` or `/reject`.
 
@@ -174,4 +174,4 @@ Submission, review, stock changes and audit records share one transaction. Exact
 
 ## Remaining work
 
-Dedicated quarantine yards, unaccepted-delivery returns, return transport, cross-branch transfers, legacy dispatch returns, delivery-weight corrections, replacement fulfilment and financial credit notes remain pending. A manual counter-adjustment must not be used to erase a return or bypass accounting: reverse the approved record instead.
+Unaccepted-delivery returns, return transport, replacement fulfilment and financial credit notes remain pending. Quarantine yards and quantity-only cross-branch operating transfers are available in V19. Delivered-trip weight corrections and standalone purchase-receipt reversals are available in V17. A manual counter-adjustment must not be used to erase a return or bypass accounting: reverse the approved record instead.

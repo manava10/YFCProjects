@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -223,7 +224,15 @@ class DocumentJourneyTest {
 
   @Test
   void missingTargetsAndDocumentsReturn404() throws Exception {
-    for (String target : List.of("TRIP", "INCIDENT", "FUEL", "EXPENSE"))
+    for (String target :
+        List.of(
+            "TRIP",
+            "INCIDENT",
+            "FUEL",
+            "EXPENSE",
+            "STOCK_ADJUSTMENT",
+            "STOCK_TRANSFER",
+            "STOCK_OPENING"))
       assertThat(
               upload(
                   uid(),
@@ -260,6 +269,35 @@ class DocumentJourneyTest {
                   file("receipt.pdf", "application/pdf", pdf()),
                   "OPERATIONS"))
           .isEqualTo(201);
+    var inventory = h.h;
+    var stock = inventory.fixture();
+    String opening = uid();
+    inventory.action(
+        "/api/v1/stock-openings",
+        Map.of(
+            "openingId",
+            opening,
+            "yardId",
+            stock.yard(),
+            "materialId",
+            stock.sales().first(),
+            "quantity",
+            new BigDecimal("1"),
+            "occurredOn",
+            inventory.helpers.today().toString(),
+            "reason",
+            "Opening stock evidence",
+            "evidenceReference",
+            "Count sheet"),
+        201);
+    assertThat(
+            upload(
+                uid(),
+                "STOCK_OPENING",
+                opening,
+                file("receipt.pdf", "application/pdf", pdf()),
+                "OPERATIONS"))
+        .isEqualTo(201);
   }
 
   @Test

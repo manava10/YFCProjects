@@ -379,4 +379,208 @@ class TripService {
     event(id, r.eventId(), "CANCEL", body);
     return result(id, false);
   }
+
+  Map<String, Object> reassign(UUID id, TripDtos.Reassign r) {
+    var t = lock(id);
+    String body = payload(r.truckId(), r.driverId(), r.reason().strip());
+    if (replay(id, r.eventId(), "REASSIGN", body)) return result(id, true);
+    if (!Set.of("DISPATCHED", "ARRIVED", "UNLOADING").contains(t.get("status")))
+      throw conflict("Crew can be reassigned only after dispatch and before delivery");
+    var line = orders.lockLine(uuid(t, "order_item_id"));
+    var vehicle = fleet.requireTruck(r.truckId(), line.branchId(), today());
+    String driver = fleet.requireDriver(r.driverId(), line.branchId(), today());
+    if (number(t, "loaded_quantity").compareTo(vehicle.capacity()) > 0)
+      throw conflict("Load exceeds replacement truck capacity");
+    fleet.release(id);
+    db.update(
+        "update trips set truck_id=?,driver_id=?,truck_registration=?,driver_name=? where id=?",
+        r.truckId(),
+        r.driverId(),
+        vehicle.registration(),
+        driver,
+        id);
+    fleet.assign(id, r.truckId(), r.driverId());
+    event(id, r.eventId(), "REASSIGN", body);
+    return result(id, false);
+  }
+
+  private Map<String, Object> correctionView(UUID id, boolean replay) {
+    var rows = db.queryForList("select * from trip_weight_corrections where id=?", id);
+    if (rows.isEmpty())
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Weight correction not found");
+    var result = normalize(rows.getFirst());
+    result.remove("create_payload");
+    result.put("replayed", replay);
+    result.put(
+        "events",
+        db
+            .queryForList(
+                "select id,action,reason,actor,occurred_at from trip_weight_correction_events where"
+                    + " correction_id=? order by occurred_at,id",
+                id)
+            .stream()
+            .map(this::normalize)
+            .toList());
+    return result;
+  }
+
+  @Transactional(readOnly = true)
+  Map<String, Object> correction(UUID id) {
+    return correctionView(id, false);
+  }
+
+  Map<String, Object> correct(UUID trip, TripDtos.WeightCorrection r) {
+    lock(trip);
+    String reason = clean(r.discrepancyReason());
+    String body =
+        payload(
+            trip,
+            amount(r.loadedGross()),
+            amount(r.loadedTare()),
+            amount(r.receivedGross()),
+            amount(r.receivedTare()),
+            amount(r.acceptedQuantity()),
+            reason,
+            r.reason().strip(),
+            r.evidenceReference().strip());
+    var prior =
+        db.queryForList("select create_payload from trip_weight_corrections where id=?", r.correctionId());
+    if (!prior.isEmpty()) {
+      if (!body.equals(prior.getFirst().get("create_payload")))
+        throw conflict("Correction ID used with different data");
+      return correctionView(r.correctionId(), true);
+    }
+    var t = trip(trip, true);
+    if (!"DELIVERED".equals(t.get("status")))
+      throw conflict("Weight corrections require a delivered trip");
+    BigDecimal loaded = r.loadedGross().subtract(r.loadedTare());
+    BigDecimal received = r.receivedGross().subtract(r.receivedTare());
+    if (loaded.signum() <= 0 || received.signum() <= 0 || r.acceptedQuantity().compareTo(received) > 0)
+      throw new IllegalArgumentException(
+          "Corrected net weights must be positive and accepted cannot exceed received");
+    if (received.compareTo(loaded) > 0)
+      throw conflict("Corrected received weight cannot exceed loaded weight");
+    if (loaded.compareTo(number(t, "planned_quantity")) > 0)
+      throw conflict("Corrected load exceeds planned quantity");
+    if ((loaded.compareTo(received) != 0 || received.compareTo(r.acceptedQuantity()) != 0)
+        && reason == null)
+      throw new IllegalArgumentException("Weight differences require a reason");
+    BigDecimal returns =
+        db.queryForObject(
+            "select coalesce(sum(quantity),0) from stock_adjustments where trip_id=? and kind='CUSTOMER_RETURN'"
+                + " and status in ('PENDING','APPROVED')",
+            BigDecimal.class,
+            trip);
+    if (r.acceptedQuantity().compareTo(returns) < 0)
+      throw conflict("Corrected accepted weight cannot be below pending or approved customer returns");
+    if (db.queryForObject(
+            "select count(*) from trip_weight_correction_claims where trip_id=?",
+            Integer.class,
+            trip)
+        > 0) throw conflict("A weight correction is already pending for this trip");
+    db.update(
+        "insert into"
+            + " trip_weight_corrections(id,trip_id,loaded_gross,loaded_tare,loaded_quantity,received_gross,received_tare,received_quantity,accepted_quantity,discrepancy_reason,reason,evidence_reference,submitted_by,create_payload)"
+            + " values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        r.correctionId(),
+        trip,
+        r.loadedGross(),
+        r.loadedTare(),
+        loaded,
+        r.receivedGross(),
+        r.receivedTare(),
+        received,
+        r.acceptedQuantity(),
+        reason,
+        r.reason().strip(),
+        r.evidenceReference().strip(),
+        actor(),
+        body);
+    db.update(
+        "insert into trip_weight_correction_claims(trip_id,correction_id) values(?,?)",
+        trip,
+        r.correctionId());
+    audit.record("TRIP_WEIGHT_CORRECTION_SUBMITTED", "TRIP", trip, "Correction=" + r.correctionId());
+    return correctionView(r.correctionId(), false);
+  }
+
+  Map<String, Object> decideCorrection(UUID id, TripDtos.Decision r, boolean approve) {
+    var rows = db.queryForList("select * from trip_weight_corrections where id=? for update", id);
+    if (rows.isEmpty())
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Weight correction not found");
+    var record = normalize(rows.getFirst());
+    String action = approve ? "APPROVE" : "REJECT";
+    var old =
+        db.queryForList("select * from trip_weight_correction_events where id=?", r.eventId());
+    if (!old.isEmpty()) {
+      var event = normalize(old.getFirst());
+      if (!id.equals(event.get("correction_id"))
+          || !action.equals(event.get("action"))
+          || !r.reason().strip().equals(event.get("reason"))
+          || !actor().equals(event.get("actor")))
+        throw conflict("Review event ID used with different data or actor");
+      return correctionView(id, true);
+    }
+    if (!"PENDING".equals(record.get("status"))) throw conflict("Weight correction already reviewed");
+    if (actor().equals(record.get("submitted_by")))
+      throw conflict("A different user must review the weight correction");
+    UUID trip = uuid(record, "trip_id");
+    if (approve) {
+      var t = lock(trip);
+      if (!"DELIVERED".equals(t.get("status")))
+        throw conflict("Weight corrections require a delivered trip");
+      BigDecimal loaded = number(record, "loaded_quantity");
+      BigDecimal received = number(record, "received_quantity");
+      BigDecimal accepted = number(record, "accepted_quantity");
+      BigDecimal capacity =
+          db.queryForObject(
+              "select capacity_tonnes from trucks where id=?",
+              BigDecimal.class,
+              uuid(t, "truck_id"));
+      if (capacity == null || loaded.compareTo(capacity) > 0)
+        throw conflict("Corrected load exceeds truck capacity");
+      if (!"TRANSPORT".equals(t.get("source"))) {
+        if ("YARD".equals(t.get("source")))
+          supply.correctYardIssue(trip, loaded, r.eventId(), "Weight correction " + id);
+        else
+          supply.correctDirectReceipt(
+              trip, loaded, received, accepted, (String) record.get("discrepancy_reason"));
+      }
+      orders.correctTripWeights(trip, loaded, received);
+      db.update(
+          "update trips set"
+              + " loaded_gross=?,loaded_tare=?,loaded_quantity=?,received_gross=?,received_tare=?,received_quantity=?,accepted_quantity=?,discrepancy_reason=?"
+              + " where id=?",
+          record.get("loaded_gross"),
+          record.get("loaded_tare"),
+          loaded,
+          record.get("received_gross"),
+          record.get("received_tare"),
+          received,
+          accepted,
+          record.get("discrepancy_reason"),
+          trip);
+    }
+    db.update(
+        "insert into trip_weight_correction_events(id,correction_id,action,reason,actor)"
+            + " values(?,?,?,?,?)",
+        r.eventId(),
+        id,
+        action,
+        r.reason().strip(),
+        actor());
+    db.update(
+        "update trip_weight_corrections set status=?,reviewed_by=?,reviewed_at=current_timestamp,review_reason=? where id=?",
+        approve ? "APPROVED" : "REJECTED",
+        actor(),
+        r.reason().strip(),
+        id);
+    db.update("delete from trip_weight_correction_claims where correction_id=?", id);
+    audit.record(
+        approve ? "TRIP_WEIGHT_CORRECTION_APPROVED" : "TRIP_WEIGHT_CORRECTION_REJECTED",
+        "TRIP",
+        trip,
+        "Event=" + r.eventId());
+    return correctionView(id, false);
+  }
 }

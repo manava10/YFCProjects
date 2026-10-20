@@ -178,4 +178,36 @@ class CorrectionController {
   Map<String, Object> rejectSupplier(@PathVariable UUID id, @Valid @RequestBody Decision r) {
     return service.decideSupplier(id, r, false);
   }
+
+  @PostMapping("/purchase-receipts/{id}/reversals")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  ResponseEntity<Map<String, Object>> receiptReversal(
+      @PathVariable UUID id, @Valid @RequestBody ReversalInput r) {
+    return written(service.receiptReversal(id, r));
+  }
+
+  @GetMapping("/purchase-receipt-reversals/{id}")
+  Map<String, Object> receiptReversal(@PathVariable UUID id) {
+    return service.get(
+        "purchase_receipt_reversals", id, "reversal_id", "purchase_receipt_reversal_events");
+  }
+
+  @GetMapping("/purchase-receipt-reversals")
+  List<Map<String, Object>> receiptReversals(
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return service.list("purchase_receipt_reversals", page, size);
+  }
+
+  @PostMapping("/purchase-receipt-reversals/{id}/approve")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> approveReceipt(@PathVariable UUID id, @Valid @RequestBody Decision r) {
+    return service.decideReceipt(id, r, true);
+  }
+
+  @PostMapping("/purchase-receipt-reversals/{id}/reject")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> rejectReceipt(@PathVariable UUID id, @Valid @RequestBody Decision r) {
+    return service.decideReceipt(id, r, false);
+  }
 }

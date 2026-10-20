@@ -2,6 +2,7 @@ package com.yfctransport.documents;
 
 import com.yfctransport.audit.AuditTrail;
 import com.yfctransport.fuel.OperatingEvidence;
+import com.yfctransport.inventory.InventoryEvidence;
 import com.yfctransport.logistics.LogisticsEvidence;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -23,13 +24,19 @@ class DocumentService {
   private final JdbcTemplate db;
   private final LogisticsEvidence logistics;
   private final OperatingEvidence operating;
+  private final InventoryEvidence inventory;
   private final AuditTrail audit;
 
   DocumentService(
-      JdbcTemplate db, LogisticsEvidence logistics, OperatingEvidence operating, AuditTrail audit) {
+      JdbcTemplate db,
+      LogisticsEvidence logistics,
+      OperatingEvidence operating,
+      InventoryEvidence inventory,
+      AuditTrail audit) {
     this.db = db;
     this.logistics = logistics;
     this.operating = operating;
+    this.inventory = inventory;
     this.audit = audit;
   }
 
@@ -43,6 +50,9 @@ class DocumentService {
       case INCIDENT -> logistics.lockIncident(id);
       case FUEL -> operating.lockFuel(id);
       case EXPENSE -> operating.lockExpense(id);
+      case STOCK_ADJUSTMENT -> inventory.lockAdjustment(id);
+      case STOCK_TRANSFER -> inventory.lockTransfer(id);
+      case STOCK_OPENING -> inventory.lockOpening(id);
     }
   }
 

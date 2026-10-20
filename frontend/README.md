@@ -1,6 +1,6 @@
 # YFC staff workspace
 
-React + TypeScript frontend for the existing Spring Boot API. This first release includes session sign-in/sign-out, paginated enquiry and order lists, multi-material enquiry creation, quotation revisions, recording send/accept/reject actions, conversion to orders, order quantity details, customer/project/site creation, and an administrator-managed material catalogue.
+React + TypeScript frontend for the existing Spring Boot API. Internal staff can sign in, then work through sales, masters, purchasing and stock, fleet and trips, fuel and expenses, and the accounting workflows the backend already implements.
 
 ## Run locally
 
@@ -12,7 +12,7 @@ npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. Vite forwards `/api`, `/login`, and `/logout` to the backend at http://localhost:8080. No credentials are embedded. Use an existing internal staff account. Projects require an existing active branch; branch administration remains in the backend for this release.
+Open http://127.0.0.1:5173. Vite forwards `/api`, `/login`, and `/logout` to the backend at http://127.0.0.1:8080. No credentials are embedded. Use an existing internal staff account. Administrators can create branches from the Branches screen.
 
 ```sh
 npm run build
@@ -23,9 +23,10 @@ Produces `dist/`. For deployment, configure the web server to serve the SPA with
 ## Integration rules
 
 - Session cookies remain browser-managed; no tokens or passwords are stored in browser storage.
-- Writes use the backend-provided CSRF header/token, refreshed after login.
+- Writes use the backend-provided CSRF header/token, refreshed after login and again after a 403.
 - Internal roles control visible actions; the backend remains authoritative.
-- Commercial totals come from server responses. Quotation prices and quantities are submitted as decimal strings to preserve precision.
-- Dropdowns retrieve all pages; tables use server pagination. Overview contains workflow links, not invented KPI totals.
+- Commercial totals come from server responses. Prices and quantities are submitted as decimal strings to preserve precision.
+- Dropdowns retrieve every page. Tables use the server page size. The overview links to workflows and does not invent KPI totals.
 - Customer decisions require contact and evidence references. Recording a quotation as sent does not send messages.
-- GST invoicing, dispatch execution, inventory, finance, external portals and branch permissions are not included in this release.
+- Accounts can read operations and use finance. They do not get trip, purchase, fleet, or stock write actions. Operations can run sales, supply and fleet, and can submit fuel, expenses, stock requests, post-dispatch crew changes, delivered-weight corrections, and standalone purchase-receipt reversals. A different accounts user approves those reviews. Administrators manage the chart, branches, materials, cash books, diesel rates, and staff accounts.
+- GST invoices, payment allocation, valuation and external portals are not in the backend yet, so they are not in this workspace. Subtotals exclude tax.

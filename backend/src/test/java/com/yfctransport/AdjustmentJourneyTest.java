@@ -292,6 +292,40 @@ class AdjustmentJourneyTest {
   }
 
   @Test
+  void nonResalableReturnIntoQuarantineYardIncreasesThatStock() throws Exception {
+    var d = delivered("DIRECT");
+    String quarantine =
+        h.id(
+            h.create(
+                "/api/v1/yards",
+                Map.of(
+                    "branchId",
+                    d.fixture().inventory().sales().branch(),
+                    "code",
+                    h.helpers.code(),
+                    "name",
+                    "Hold yard",
+                    "address",
+                    "Quarantine bay",
+                    "kind",
+                    "QUARANTINE")));
+    BigDecimal usable =
+        stock(d.fixture().inventory().yard(), d.fixture().inventory().sales().first());
+    var r = returned(d, "2");
+    r.put("resalable", false);
+    r.put("yardId", quarantine);
+    h.action(returnPath(d), r, 201);
+    approve(r.get("returnId").toString());
+    assertThat(stock(d.fixture().inventory().yard(), d.fixture().inventory().sales().first()))
+        .isEqualByComparingTo(usable);
+    assertThat(stock(quarantine, d.fixture().inventory().sales().first()))
+        .isEqualByComparingTo("2");
+    r = returned(d, "1");
+    r.put("yardId", quarantine);
+    h.action(returnPath(d), r, 409);
+  }
+
+  @Test
   void returnEligibilityAndBranchOwnership() throws Exception {
     var d = delivered("DIRECT");
     var r = returned(d, "1");

@@ -95,4 +95,16 @@ class OrderFulfillmentService implements OrderFulfillment {
     if (db.update("update dispatches set received_quantity=? where id=?", received, trip) != 1)
       throw new IllegalStateException("Trip dispatch record is missing");
   }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void correctTripWeights(
+      UUID trip, java.math.BigDecimal loaded, java.math.BigDecimal received) {
+    if (db.update(
+            "update dispatches set loaded_quantity=?,received_quantity=? where id=?",
+            loaded,
+            received,
+            trip)
+        != 1) throw new IllegalStateException("Trip dispatch record is missing");
+  }
 }

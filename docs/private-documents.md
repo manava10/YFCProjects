@@ -1,6 +1,6 @@
 # Private document uploads
 
-Staff can attach PDF, JPEG and PNG files to trips, trip incidents, fuel entries and operating expenses. Files and metadata are stored together in the existing application database by migration V10. There is no public file directory, public URL or bucket. No new environment variables, AWS resources or credentials are required.
+Staff can attach PDF, JPEG and PNG files to trips, trip incidents, fuel entries, operating expenses, stock adjustments, stock transfers and stock openings. Files and metadata are stored together in the existing application database by migration V10. There is no public file directory, public URL or bucket. No new environment variables, AWS resources or credentials are required.
 
 This is the initial database-backed document store. S3, malware scanning, file previews, document replacement/deletion, retention policies and external portals remain future work. Include file data when backing up/restoring the database. The configured database TLS protects transport; encryption at rest follows the database's configuration. Files are not separately application-encrypted.
 
@@ -23,7 +23,7 @@ POST `/api/v1/documents` with multipart form fields:
 | Field | Value |
 |---|---|
 | `documentId` | Client-generated UUID, reused for retries |
-| `targetType` | `TRIP`, `INCIDENT`, `FUEL` or `EXPENSE` |
+| `targetType` | `TRIP`, `INCIDENT`, `FUEL`, `EXPENSE`, `STOCK_ADJUSTMENT`, `STOCK_TRANSFER` or `STOCK_OPENING` |
 | `targetId` | Existing record UUID of that type |
 | `file` | One PDF/JPEG/PNG multipart file with its content type |
 

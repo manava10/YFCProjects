@@ -49,6 +49,22 @@ test('directory selection loads every page', async () => {
   assert.match(calls[1].url,/page=1&size=100/);
 });
 
+test('forbidden responses show the server detail and refresh CSRF', async () => {
+  const {api,calls}=await setup([
+    {body:{headerName:'X-CSRF-TOKEN',token:'stale'}},
+    {status:403,body:{detail:'You cannot review your own request'}},
+    {body:{headerName:'X-CSRF-TOKEN',token:'fresh'}},
+    {body:{ok:true}},
+  ]);
+  await assert.rejects(
+    api.post('/api/v1/action',{}),
+    (error) => error.status === 403 && error.message === 'You cannot review your own request',
+  );
+  await api.post('/api/v1/action',{});
+  assert.equal(calls[2].url,'/api/v1/csrf');
+  assert.equal(calls[3].options.headers.get('X-CSRF-TOKEN'),'fresh');
+});
+
 test('conflict responses retain the server explanation', async () => {
   const {api}=await setup([{status:409,body:{detail:'Record changed concurrently. Reload it before retrying.'}}]);
   await assert.rejects(api.request('/api/v1/orders'),error=>error.status===409&&error.message.includes('Reload'));

@@ -78,16 +78,24 @@ class InventoryService implements TripSupply {
     return y;
   }
 
+  private Map<String, Object> operatingYard(UUID id) {
+    var y = yard(id, true);
+    if (!"OPERATING".equals(y.get("kind")))
+      throw conflict("Only operating yards can receive purchases, reservations or issues");
+    return y;
+  }
+
   Map<String, Object> createYard(InventoryDtos.YardInput r) {
     branches.requireActive(r.branchId());
     UUID id = UUID.randomUUID();
     db.update(
-        "insert into yards(id,branch_id,code,name,address) values(?,?,?,?,?)",
+        "insert into yards(id,branch_id,code,name,address,kind) values(?,?,?,?,?,?)",
         id,
         r.branchId(),
         r.code().toUpperCase(Locale.ROOT),
         r.name().strip(),
-        r.address().strip());
+        r.address().strip(),
+        r.kind());
     audit.record("YARD_CREATED", "YARD", id, "Yard created");
     return one("yards", id, false);
   }
@@ -198,7 +206,7 @@ class InventoryService implements TripSupply {
     if (r.destination() == InventoryDtos.Destination.YARD) {
       if (r.yardId() == null || r.orderItemId() != null)
         throw new IllegalArgumentException("YARD requires yardId and no orderItemId");
-      branch = uuid(yard(r.yardId(), true), "branch_id");
+      branch = uuid(operatingYard(r.yardId()), "branch_id");
     } else {
       if (r.orderItemId() == null || r.yardId() != null)
         throw new IllegalArgumentException("DIRECT requires orderItemId and no yardId");
@@ -326,7 +334,7 @@ class InventoryService implements TripSupply {
     // Existing purchases can be received after a supplier/material is deactivated; yard must be
     // operational.
     if (yard != null) {
-      yard(yard, true);
+      operatingYard(yard);
       ensureStock(yard, material);
     }
     db.update(
@@ -390,7 +398,7 @@ class InventoryService implements TripSupply {
 
   Map<String, Object> reserve(InventoryDtos.ReservationInput r) {
     var line = orders.lockMaterialLine(r.orderItemId());
-    var y = yard(r.yardId(), true);
+    var y = operatingYard(r.yardId());
     if (!line.branchId().equals(uuid(y, "branch_id")))
       throw new IllegalArgumentException("Yard and order must belong to the same branch");
     materials.getActive(line.materialId());
@@ -477,7 +485,7 @@ class InventoryService implements TripSupply {
       m.put("replayed", true);
       return m;
     }
-    yard(uuid(r, "yard_id"), true);
+    operatingYard(uuid(r, "yard_id"));
     BigDecimal remaining =
         number(r, "quantity")
             .subtract(number(r, "issued_quantity"))
@@ -630,6 +638,86 @@ class InventoryService implements TripSupply {
     db.update("update trip_supply_claims set status='CANCELLED' where trip_id=?", trip);
   }
 
+  @Override
+  @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+  public void correctYardIssue(UUID trip, BigDecimal newLoaded, UUID movementId, String reference) {
+    var c = supply(trip);
+    if (!"DELIVERED".equals(c.get("status")) || uuid(c, "reservation_id") == null)
+      throw conflict("Yard weight correction requires a delivered yard trip");
+    BigDecimal old = number(c, "quantity");
+    BigDecimal delta = newLoaded.subtract(old);
+    if (delta.signum() == 0) return;
+    if (delta.signum() > 0)
+      issueInternal(
+          uuid(c, "reservation_id"),
+          new InventoryDtos.IssueInput(movementId, delta, reference),
+          null);
+    else {
+      var r = lockReservation(uuid(c, "reservation_id"));
+      BigDecimal qty = delta.abs();
+      if (number(r, "issued_quantity").compareTo(qty) < 0)
+        throw conflict("Cannot reduce issued stock below the reservation's issued quantity");
+      db.update(
+          "update stock_reservations set issued_quantity=issued_quantity-? where id=?",
+          qty,
+          uuid(r, "id"));
+      db.update(
+          "update stock_balances set on_hand=on_hand+?,reserved=reserved+? where yard_id=? and"
+              + " material_id=?",
+          qty,
+          qty,
+          uuid(r, "yard_id"),
+          uuid(r, "material_id"));
+      db.update(
+          "insert into"
+              + " execution_stock_movements(id,source_type,source_id,yard_id,material_id,kind,quantity,reference,recorded_by)"
+              + " values(?,?,?,?,?,'ADJUST_IN',?,?,?)",
+          movementId,
+          "WEIGHT",
+          trip,
+          uuid(r, "yard_id"),
+          uuid(r, "material_id"),
+          qty,
+          reference,
+          actor());
+    }
+    db.update("update trip_supply_claims set quantity=? where trip_id=?", newLoaded, trip);
+  }
+
+  @Override
+  @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+  public void correctDirectReceipt(
+      UUID trip, BigDecimal loaded, BigDecimal received, BigDecimal accepted, String reason) {
+    var c = supply(trip);
+    if (!"DELIVERED".equals(c.get("status")) || uuid(c, "purchase_id") == null)
+      throw conflict("Direct weight correction requires a delivered direct trip");
+    var receipt = one("purchase_receipts", trip, true);
+    var p = one("purchase_orders", uuid(c, "purchase_id"), true);
+    if (!Set.of("OPEN", "RECEIVED").contains((String) p.get("status")))
+      throw conflict("Direct purchase is closed and cannot change receipt weights");
+    BigDecimal nextReceived =
+        number(p, "received_quantity").subtract(number(receipt, "received_quantity")).add(received);
+    if (nextReceived.compareTo(number(p, "quantity")) > 0)
+      throw conflict("Corrected receipts exceed purchased quantity");
+    db.update(
+        "update purchase_receipts set"
+            + " loaded_quantity=?,received_quantity=?,accepted_quantity=?,discrepancy_reason=?"
+            + " where id=?",
+        loaded,
+        received,
+        accepted,
+        reason,
+        trip);
+    db.update(
+        "update purchase_orders set received_quantity=?,accepted_quantity=accepted_quantity-?+?,"
+            + " status=? where id=?",
+        nextReceived,
+        number(receipt, "accepted_quantity"),
+        accepted,
+        nextReceived.compareTo(number(p, "quantity")) == 0 ? "RECEIVED" : "OPEN",
+        uuid(p, "id"));
+  }
+
   @Transactional(readOnly = true)
   Map<String, Object> balance(UUID yard, UUID material) {
     one("yards", yard, false);
@@ -664,7 +752,10 @@ class InventoryService implements TripSupply {
                 + " stock_adjustment_movements union all select"
                 + " id,yard_id,material_id,kind,quantity,cast(null as uuid),cast(null as"
                 + " uuid),reference,recorded_by,created_at,cast(null as uuid) from"
-                + " stock_correction_movements) all_movements where yard_id=? and material_id=?"
+                + " stock_correction_movements union all select"
+                + " id,yard_id,material_id,kind,quantity,cast(null as uuid),cast(null as"
+                + " uuid),reference,recorded_by,created_at,cast(null as uuid) from"
+                + " execution_stock_movements) all_movements where yard_id=? and material_id=?"
                 + " order by created_at desc,id desc limit ? offset ?",
             yard,
             material,

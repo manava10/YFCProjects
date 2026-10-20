@@ -65,9 +65,15 @@ aside {
   inset: 0 auto 0 0;
   background: #142e2a;
   color: #d8e3dc;
-  padding: 32px 22px;
+  padding: 28px 18px 18px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+.nav-scroll {
+  overflow: auto;
+  padding-right: 4px;
+  margin-right: -4px;
 }
 .brand {
   display: flex;
@@ -296,6 +302,9 @@ p {
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   margin-top: 25px;
+}
+.cards.four {
+  grid-template-columns: repeat(4, 1fr);
 }
 .card {
   position: relative;
@@ -608,6 +617,65 @@ footer {
   padding: 80px;
   text-align: center;
 }
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 22px;
+}
+.tab {
+  background: #fff;
+  color: #31584a;
+  border: 1px solid #d9dfd6;
+}
+.tab.active {
+  background: #226552;
+  color: white;
+  border-color: #226552;
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px 18px;
+  margin: 0 0 18px;
+}
+.facts div {
+  min-width: 0;
+}
+.facts dt {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7c8678;
+}
+.facts dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+.chip-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f4f6ef;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.heading-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+tr:hover td {
+  background: #fbfcf8;
+}
 .login-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -645,6 +713,12 @@ footer {
   margin: auto;
   width: 100%;
 }
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  width: min(500px, 100%);
+}
 .login h2 {
   font-size: 25px;
 }
@@ -664,6 +738,11 @@ footer {
 @media (min-width: 1500px) {
   main {
     padding-top: 55px;
+  }
+}
+@media (max-width: 1200px) {
+  .cards.four {
+    grid-template-columns: 1fr 1fr;
   }
 }
 @media (max-width: 1000px) {
@@ -718,9 +797,16 @@ footer {
   .brand-sub {
     font-size: 6px;
   }
-  .workspace-tag,
-  .nav-label {
+  .workspace-tag {
     display: none;
+  }
+  .nav-scroll {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+  }
+  .nav-label {
+    margin: 8px 8px 4px;
   }
   .aside-bottom {
     padding-top: 14px;
@@ -766,7 +852,8 @@ footer {
   .hero h2 {
     font-size: 27px;
   }
-  .cards {
+  .cards,
+  .cards.four {
     grid-template-columns: 1fr;
   }
   .card h3 {

@@ -836,4 +836,103 @@ class TripJourneyTest {
     List<String> ids = JsonPath.read(response, "$[*].id");
     assertThat(ids).contains(driver);
   }
+
+  int review(String path, String user) throws Exception {
+    return mvc.perform(
+            post(path)
+                .with(user(user).roles("ACCOUNTS"))
+                .with(csrf())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(
+                        Map.of("eventId", uid(), "reason", "Weighbridge independently checked"))))
+        .andReturn()
+        .getResponse()
+        .getStatus();
+  }
+
+  @Test
+  void postDispatchReassignmentMovesExclusiveCrewBeforeDelivery() throws Exception {
+    var f = fixture("YARD");
+    String trip = allocate(f);
+    dispatched(trip);
+    String truck = truck();
+    putBody("/api/v1/trucks/" + truck + "/compliance", compliance(f), 200);
+    String driver = id(create("/api/v1/drivers", driverBody(f.inventory().sales().branch())));
+    var body =
+        Map.of(
+            "eventId",
+            uid(),
+            "truckId",
+            truck,
+            "driverId",
+            driver,
+            "reason",
+            "Original truck broke down after dispatch");
+    action("/api/v1/trips/" + trip + "/reassignments", body, 200);
+    action("/api/v1/trips/" + trip + "/reassignments", body, 200);
+    mvc.perform(get("/api/v1/trips/" + trip))
+        .andExpect(jsonPath("$.truck_id").value(truck))
+        .andExpect(jsonPath("$.driver_id").value(driver))
+        .andExpect(jsonPath("$.status").value("DISPATCHED"));
+    assertThat(
+            db.queryForObject(
+                "select count(*) from fleet_assignments where trip_id=? and truck_id=?",
+                Integer.class,
+                UUID.fromString(trip),
+                UUID.fromString(truck)))
+        .isEqualTo(1);
+    step(trip, "arrive");
+    step(trip, "start-unloading");
+    action("/api/v1/trips/" + trip + "/deliver", delivery("29", "28"), 200);
+  }
+
+  @Test
+  void deliveredWeightCorrectionUpdatesDispatchAndRestoresUnusedYardStock() throws Exception {
+    var f = fixture("YARD");
+    String trip = allocate(f);
+    finished(trip);
+    h.stock(f.inventory(), "70", "70", "0");
+    var body =
+        new HashMap<>(
+            Map.of(
+                "correctionId",
+                uid(),
+                "loadedGross",
+                41,
+                "loadedTare",
+                12,
+                "receivedGross",
+                40,
+                "receivedTare",
+                12,
+                "acceptedQuantity",
+                27,
+                "discrepancyReason",
+                "Weighbridge slip recut after independent check",
+                "reason",
+                "Plant slip used the wrong tare",
+                "evidenceReference",
+                "Corrected weighbridge slip"));
+    action("/api/v1/trips/" + trip + "/weight-corrections", body, 201);
+    action("/api/v1/trips/" + trip + "/weight-corrections", body, 200);
+    assertThat(
+            review(
+                "/api/v1/trips/weight-corrections/" + body.get("correctionId") + "/approve",
+                "trip-admin"))
+        .isEqualTo(409);
+    assertThat(
+            review(
+                "/api/v1/trips/weight-corrections/" + body.get("correctionId") + "/approve",
+                "reviewer"))
+        .isEqualTo(200);
+    h.stock(f.inventory(), "71", "71", "0");
+    mvc.perform(get("/api/v1/orders/" + f.inventory().order()))
+        .andExpect(jsonPath("$.loadedQuantity").value(29))
+        .andExpect(jsonPath("$.receivedQuantity").value(28))
+        .andExpect(jsonPath("$.billableQuantity").value(100));
+    mvc.perform(get("/api/v1/trips/" + trip))
+        .andExpect(jsonPath("$.loaded_quantity").value(29.0))
+        .andExpect(jsonPath("$.accepted_quantity").value(27.0));
+  }
 }

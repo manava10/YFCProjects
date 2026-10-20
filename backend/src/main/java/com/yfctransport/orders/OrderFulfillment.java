@@ -22,4 +22,6 @@ public interface OrderFulfillment {
   void recordTripDispatch(UUID tripId, UUID itemId, BigDecimal loaded);
 
   void recordTripDelivery(UUID tripId, BigDecimal received);
+
+  void correctTripWeights(UUID tripId, BigDecimal loaded, BigDecimal received);
 }

@@ -662,4 +662,83 @@ class OperatingJourneyTest {
                 UUID.fromString(f.rate())))
         .isEqualTo(1);
   }
+
+  Map<String, Object> reviewBody() {
+    return Map.of("eventId", uid(), "reason", "Physical record independently checked");
+  }
+
+  @Test
+  void approvedOdometerResetAllowsALowerLaterReading() throws Exception {
+    var f = fixture();
+    Instant first = now().minusSeconds(120);
+    String earlier = id(create("/api/v1/fuel/entries", fuel(f, first, "1000.0")));
+    review(fuelPath(earlier, "approve"), decision(1), 200);
+    var reset =
+        Map.of(
+            "resetId",
+            uid(),
+            "truckId",
+            f.truck(),
+            "newReading",
+            new BigDecimal("50.0"),
+            "resetAt",
+            now().minusSeconds(30).toString(),
+            "reason",
+            "Dashboard cluster replaced",
+            "evidenceReference",
+            "Workshop replacement note");
+    action("/api/v1/odometer-resets", reset, 201);
+    action("/api/v1/odometer-resets", reset, 200);
+    review("/api/v1/odometer-resets/" + reset.get("resetId") + "/approve", reviewBody(), 200);
+    String later = id(create("/api/v1/fuel/entries", fuel(f, now(), "80.0")));
+    review(fuelPath(later, "approve"), decision(1), 200);
+    String tooLow = id(create("/api/v1/fuel/entries", fuel(f, now().plusSeconds(10), "40.0")));
+    review(fuelPath(tooLow, "approve"), decision(1), 409);
+  }
+
+  @Test
+  void truckOnlyFuelCanBeSplitAcrossTripsAfterIndependentApproval() throws Exception {
+    var f = tripFixture();
+    String fuel = id(create("/api/v1/fuel/entries", fuel(f.fuel(), now(), "1000.0")));
+    review(fuelPath(fuel, "approve"), decision(1), 200);
+    var allocation =
+        Map.of(
+            "allocationId",
+            uid(),
+            "tripId",
+            f.trip(),
+            "quantityLitres",
+            new BigDecimal("40"),
+            "reason",
+            "Share pump receipt with this loaded trip",
+            "evidenceReference",
+            "Supervisor allocation note");
+    action("/api/v1/fuel/entries/" + fuel + "/allocations", allocation, 201);
+    review(
+        "/api/v1/fuel-allocations/" + allocation.get("allocationId") + "/approve",
+        reviewBody(),
+        200);
+    mvc.perform(get("/api/v1/trips/" + f.trip() + "/operating-costs"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.approvedFuelPurchasedLitres").value(40))
+        .andExpect(jsonPath("$.approvedFuelCost").value(3680));
+    var assigned = fuel(f.fuel(), now(), "1100.0");
+    assigned.put("tripId", f.trip());
+    String whole = id(create("/api/v1/fuel/entries", assigned));
+    review(fuelPath(whole, "approve"), decision(1), 200);
+    action(
+        "/api/v1/fuel/entries/" + whole + "/allocations",
+        Map.of(
+            "allocationId",
+            uid(),
+            "tripId",
+            f.trip(),
+            "quantityLitres",
+            new BigDecimal("10"),
+            "reason",
+            "Whole receipt cannot be split",
+            "evidenceReference",
+            "Note"),
+        409);
+  }
 }

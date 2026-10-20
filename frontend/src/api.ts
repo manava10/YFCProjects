@@ -1,15 +1,25 @@
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
+  status: number;
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
   }
 }
 let csrf: { headerName: string; token: string } | undefined;
 export async function token() {
   csrf = await request("/api/v1/csrf");
   return csrf!;
+}
+async function refreshCsrf() {
+  const response = await fetch("/api/v1/csrf", { credentials: "same-origin" });
+  csrf = response.ok ? await response.json() : undefined;
+}
+function detail(body: { detail?: unknown } | null, status: number) {
+  if (typeof body?.detail === "string" && body.detail.trim()) return body.detail;
+  if (status === 401) return "Please sign in to continue.";
+  if (status === 403)
+    return "This action is not permitted, or your security token has expired. Refresh and try again.";
+  return `Request failed (${status}). Please try again.`;
 }
 export async function request<T = any>(
   path: string,
@@ -29,21 +39,14 @@ export async function request<T = any>(
     const body = await response.json().catch(() => null);
     if (response.status === 401)
       window.dispatchEvent(new Event("session-expired"));
-    throw new ApiError(
-      response.status,
-      body?.detail ??
-        (response.status === 401
-          ? "Please sign in to continue."
-          : response.status === 403
-            ? "This action is not permitted, or your security token has expired. Refresh and try again."
-            : `Request failed (${response.status}). Please try again.`),
-    );
+    if (response.status === 403) await refreshCsrf();
+    throw new ApiError(response.status, detail(body, response.status));
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }
-export const post = <T = any>(path: string, body?: unknown) =>
+const write = <T = any>(method: string, path: string, body?: unknown) =>
   request<T>(path, {
-    method: "POST",
+    method,
     ...(body === undefined
       ? {}
       : {
@@ -51,6 +54,29 @@ export const post = <T = any>(path: string, body?: unknown) =>
           body: JSON.stringify(body),
         }),
   });
+export const post = <T = any>(path: string, body?: unknown) =>
+  write<T>("POST", path, body);
+export const put = <T = any>(path: string, body?: unknown) =>
+  write<T>("PUT", path, body);
+export const patch = <T = any>(path: string, body?: unknown) =>
+  write<T>("PATCH", path, body);
+export const del = <T = any>(path: string) => request<T>(path, { method: "DELETE" });
+export async function upload<T = any>(path: string, body: FormData) {
+  return request<T>(path, { method: "POST", body });
+}
+export async function binary(path: string) {
+  const response = await fetch(path, { credentials: "same-origin" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    if (response.status === 401)
+      window.dispatchEvent(new Event("session-expired"));
+    throw new ApiError(
+      response.status,
+      body?.detail ?? `Request failed (${response.status}). Please try again.`,
+    );
+  }
+  return response.blob();
+}
 export async function login(username: string, password: string) {
   await token();
   await request("/login", {
@@ -80,4 +106,18 @@ export async function all(path: string): Promise<RecordData[]> {
     rows.push(...result.content);
     if (page + 1 >= result.totalPages) return rows;
   }
+}
+export async function collect(path: string): Promise<RecordData[]> {
+  const rows: RecordData[] = [];
+  for (let page = 0; page < 50; page++) {
+    const result = await request<Page<RecordData> | RecordData[]>(
+      `${path}${path.includes("?") ? "&" : "?"}page=${page}&size=100`,
+    );
+    const content = Array.isArray(result) ? result : (result.content ?? []);
+    rows.push(...content);
+    if (Array.isArray(result)) {
+      if (content.length < 100) return rows;
+    } else if (page + 1 >= (result.totalPages ?? 0)) return rows;
+  }
+  return rows;
 }

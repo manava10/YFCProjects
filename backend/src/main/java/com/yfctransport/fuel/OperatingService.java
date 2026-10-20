@@ -360,32 +360,62 @@ class OperatingService {
     BigDecimal odo = decimal(r, "odometer");
     Instant at = instant(r, "filled_at");
     UUID truck = uuid(r, "truck_id"), id = uuid(r, "id");
+    var applied =
+        db.queryForList(
+            "select new_reading,reset_at from odometer_resets where truck_id=? and"
+                + " status='APPROVED' and reset_at<=? order by reset_at desc,submitted_at desc,id"
+                + " desc limit 1",
+            truck,
+            java.sql.Timestamp.from(at));
+    BigDecimal floor = null;
+    java.sql.Timestamp afterBound = java.sql.Timestamp.from(Instant.EPOCH);
+    if (!applied.isEmpty()) {
+      var reset = normalize(applied.getFirst());
+      floor = decimal(reset, "new_reading");
+      afterBound = java.sql.Timestamp.from(instant(reset, "reset_at"));
+    }
+    java.sql.Timestamp beforeBound = java.sql.Timestamp.from(Instant.parse("9999-12-31T23:59:59Z"));
+    var next =
+        db.queryForList(
+            "select reset_at from odometer_resets where truck_id=? and status='APPROVED' and"
+                + " reset_at>? order by reset_at,id limit 1",
+            truck,
+            java.sql.Timestamp.from(at));
+    if (!next.isEmpty())
+      beforeBound = java.sql.Timestamp.from(instant(normalize(next.getFirst()), "reset_at"));
     BigDecimal before =
         db.queryForObject(
             "select max(odometer) from fuel_entries where truck_id=? and id<>? and"
-                + " status='APPROVED' and filled_at<?",
+                + " status='APPROVED' and filled_at<? and filled_at>? and filled_at<?",
             BigDecimal.class,
             truck,
             id,
-            java.sql.Timestamp.from(at));
+            java.sql.Timestamp.from(at),
+            afterBound,
+            beforeBound);
     BigDecimal after =
         db.queryForObject(
             "select min(odometer) from fuel_entries where truck_id=? and id<>? and"
-                + " status='APPROVED' and filled_at>?",
+                + " status='APPROVED' and filled_at>? and filled_at>? and filled_at<?",
             BigDecimal.class,
             truck,
             id,
-            java.sql.Timestamp.from(at));
+            java.sql.Timestamp.from(at),
+            afterBound,
+            beforeBound);
     Integer different =
         db.queryForObject(
             "select count(*) from fuel_entries where truck_id=? and id<>? and status='APPROVED' and"
-                + " filled_at=? and odometer<>?",
+                + " filled_at=? and odometer<>? and filled_at>? and filled_at<?",
             Integer.class,
             truck,
             id,
             java.sql.Timestamp.from(at),
-            odo);
-    if (before != null && odo.compareTo(before) < 0
+            odo,
+            afterBound,
+            beforeBound);
+    if (floor != null && odo.compareTo(floor) < 0
+        || before != null && odo.compareTo(before) < 0
         || after != null && odo.compareTo(after) > 0
         || different > 0) throw conflict("Odometer conflicts with approved filling chronology");
   }
@@ -578,10 +608,14 @@ class OperatingService {
     var c = trips.lock(trip);
     BigDecimal fuel =
         db.queryForObject(
-            "select coalesce(sum(amount),0) from fuel_entries where trip_id=? and"
+            "select coalesce((select sum(amount) from fuel_entries where trip_id=? and"
                 + " status='APPROVED' and id not in (select source_id from operating_reversals where"
-                + " kind='FUEL' and status='APPROVED')",
+                + " kind='FUEL' and status='APPROVED')),0)+coalesce((select sum(a.amount) from"
+                + " fuel_allocations a join fuel_entries f on f.id=a.fuel_id where a.trip_id=? and"
+                + " a.status='APPROVED' and f.status='APPROVED' and f.id not in (select source_id"
+                + " from operating_reversals where kind='FUEL' and status='APPROVED')),0)",
             BigDecimal.class,
+            trip,
             trip);
     BigDecimal other =
         db.queryForObject(
@@ -592,17 +626,24 @@ class OperatingService {
             trip);
     BigDecimal litres =
         db.queryForObject(
-            "select coalesce(sum(quantity_litres),0) from fuel_entries where trip_id=? and"
+            "select coalesce((select sum(quantity_litres) from fuel_entries where trip_id=? and"
                 + " status='APPROVED' and id not in (select source_id from operating_reversals where"
-                + " kind='FUEL' and status='APPROVED')",
+                + " kind='FUEL' and status='APPROVED')),0)+coalesce((select sum(a.quantity_litres)"
+                + " from fuel_allocations a join fuel_entries f on f.id=a.fuel_id where"
+                + " a.trip_id=? and a.status='APPROVED' and f.status='APPROVED' and f.id not in"
+                + " (select source_id from operating_reversals where kind='FUEL' and"
+                + " status='APPROVED')),0)",
             BigDecimal.class,
+            trip,
             trip);
     Integer pending =
         db.queryForObject(
             "select (select count(*) from fuel_entries where trip_id=? and"
                 + " status='PENDING_VERIFICATION')+(select count(*) from operating_expenses where"
-                + " trip_id=? and status='PENDING_VERIFICATION')",
+                + " trip_id=? and status='PENDING_VERIFICATION')+(select count(*) from"
+                + " fuel_allocations where trip_id=? and status='PENDING')",
             Integer.class,
+            trip,
             trip,
             trip);
     Map<String, Object> result = new LinkedHashMap<>();
@@ -636,6 +677,13 @@ class OperatingService {
     var row = one(table(kind), source, true);
     if (!"APPROVED".equals(row.get("status")))
       throw conflict("Only an approved operating record can be reversed");
+    if ("FUEL".equals(kind)
+        && db.queryForObject(
+                "select count(*) from fuel_allocations where fuel_id=? and status='PENDING'",
+                Integer.class,
+                source)
+            > 0)
+      throw conflict("Pending fuel allocations must be rejected before reversing this receipt");
     if (db.queryForObject(
             "select count(*) from operating_reversal_claims where kind=? and source_id=?",
             Integer.class,
@@ -707,5 +755,266 @@ class OperatingService {
     result.remove("create_payload");
     result.put("replayed", false);
     return result;
+  }
+
+  private Map<String, Object> claimView(
+      String table, UUID id, String eventKey, String events, boolean replay) {
+    var row = one(table, id, false);
+    row.remove("create_payload");
+    Map<String, Object> out = new LinkedHashMap<>();
+    row.forEach((k, v) -> out.put(camel(k), v));
+    out.put("replayed", replay);
+    out.put(
+        "events",
+        db.queryForList(
+            "select id,action,reason,actor,occurred_at from "
+                + events
+                + " where "
+                + eventKey
+                + "=? order by occurred_at,id",
+            id));
+    return out;
+  }
+
+  private List<Map<String, Object>> claimList(
+      String table, String eventKey, String events, int page, int size) {
+    return db
+        .query(
+            "select id from " + table + " order by submitted_at,id limit ? offset ?",
+            (r, n) -> r.getObject(1, UUID.class),
+            size,
+            (long) page * size)
+        .stream()
+        .map(id -> claimView(table, id, eventKey, events, false))
+        .toList();
+  }
+
+  private boolean replayReview(
+      String events, UUID event, UUID record, String key, String action, String reason) {
+    var rows = db.queryForList("select * from " + events + " where id=?", event);
+    if (rows.isEmpty()) return false;
+    var e = normalize(rows.getFirst());
+    if (!record.equals(e.get(key))
+        || !action.equals(e.get("action"))
+        || !reason.equals(e.get("reason"))
+        || !actor().equals(e.get("actor")))
+      throw conflict("Review event ID used with different data or actor");
+    return true;
+  }
+
+  Map<String, Object> resetOdometer(OperatingDtos.OdometerReset r) {
+    trucks.lockTankCapacity(r.truckId());
+    String body =
+        payload(
+            r.truckId(),
+            n(r.newReading()),
+            r.resetAt(),
+            r.reason().strip(),
+            r.evidenceReference().strip());
+    if (db.queryForObject(
+            "select count(*) from odometer_resets where id=?", Integer.class, r.resetId())
+        > 0) {
+      if (!body.equals(one("odometer_resets", r.resetId(), false).get("create_payload")))
+        throw conflict("Record ID used with different data");
+      return claimView(
+          "odometer_resets", r.resetId(), "reset_id", "odometer_reset_events", true);
+    }
+    if (r.resetAt().isAfter(clock.instant()))
+      throw new IllegalArgumentException("Odometer reset cannot be in the future");
+    if (db.queryForObject(
+            "select count(*) from odometer_reset_claims where truck_id=?",
+            Integer.class,
+            r.truckId())
+        > 0) throw conflict("A pending odometer reset already exists for this truck");
+    db.update(
+        "insert into"
+            + " odometer_resets(id,truck_id,new_reading,reset_at,reason,evidence_reference,submitted_by,create_payload)"
+            + " values(?,?,?,?,?,?,?,?)",
+        r.resetId(),
+        r.truckId(),
+        r.newReading(),
+        java.sql.Timestamp.from(r.resetAt()),
+        r.reason().strip(),
+        r.evidenceReference().strip(),
+        actor(),
+        body);
+    db.update(
+        "insert into odometer_reset_claims(truck_id,reset_id) values(?,?)",
+        r.truckId(),
+        r.resetId());
+    audit.record("ODOMETER_RESET_SUBMITTED", "ODOMETER_RESET", r.resetId(), "Truck=" + r.truckId());
+    return claimView("odometer_resets", r.resetId(), "reset_id", "odometer_reset_events", false);
+  }
+
+  Map<String, Object> odometerReset(UUID id) {
+    return claimView("odometer_resets", id, "reset_id", "odometer_reset_events", false);
+  }
+
+  List<Map<String, Object>> listResets(int page, int size) {
+    return claimList("odometer_resets", "reset_id", "odometer_reset_events", page, size);
+  }
+
+  Map<String, Object> decideReset(UUID id, OperatingDtos.Review r, boolean approve) {
+    trucks.lockTankCapacity(uuid(one("odometer_resets", id, false), "truck_id"));
+    var record = one("odometer_resets", id, true);
+    String action = approve ? "APPROVE" : "REJECT";
+    if (replayReview("odometer_reset_events", r.eventId(), id, "reset_id", action, r.reason()))
+      return claimView("odometer_resets", id, "reset_id", "odometer_reset_events", true);
+    if (!"PENDING".equals(record.get("status"))) throw conflict("Odometer reset already reviewed");
+    if (actor().equals(record.get("submitted_by")))
+      throw conflict("A different user must review the odometer reset");
+    db.update(
+        "insert into odometer_reset_events(id,reset_id,action,reason,actor) values(?,?,?,?,?)",
+        r.eventId(),
+        id,
+        action,
+        r.reason(),
+        actor());
+    db.update(
+        "update odometer_resets set status=?,reviewed_by=?,reviewed_at=current_timestamp,review_reason=? where id=?",
+        approve ? "APPROVED" : "REJECTED",
+        actor(),
+        r.reason(),
+        id);
+    db.update("delete from odometer_reset_claims where reset_id=?", id);
+    audit.record(
+        approve ? "ODOMETER_RESET_APPROVED" : "ODOMETER_RESET_REJECTED",
+        "ODOMETER_RESET",
+        id,
+        "Event=" + r.eventId());
+    return claimView("odometer_resets", id, "reset_id", "odometer_reset_events", false);
+  }
+
+  Map<String, Object> allocate(UUID fuel, OperatingDtos.FuelAllocation r) {
+    var links = db.queryForList("select truck_id,trip_id,status from fuel_entries where id=?", fuel);
+    if (links.isEmpty())
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Operating record not found");
+    var link = normalize(links.getFirst());
+    var trip = context(r.tripId(), uuid(link, "truck_id"));
+    trucks.lockTankCapacity(uuid(link, "truck_id"));
+    var entry = one("fuel_entries", fuel, true);
+    String body =
+        payload(
+            fuel,
+            r.tripId(),
+            n(r.quantityLitres()),
+            r.reason().strip(),
+            r.evidenceReference().strip());
+    if (db.queryForObject(
+            "select count(*) from fuel_allocations where id=?", Integer.class, r.allocationId())
+        > 0) {
+      if (!body.equals(one("fuel_allocations", r.allocationId(), false).get("create_payload")))
+        throw conflict("Record ID used with different data");
+      return claimView(
+          "fuel_allocations", r.allocationId(), "allocation_id", "fuel_allocation_events", true);
+    }
+    if (!"APPROVED".equals(entry.get("status")))
+      throw conflict("Only an approved truck-only fuel receipt can be allocated");
+    if (entry.get("trip_id") != null)
+      throw conflict("A fuel receipt already assigned to a trip cannot be split");
+    if (db.queryForObject(
+            "select count(*) from operating_reversals where kind='FUEL' and source_id=? and"
+                + " status='APPROVED'",
+            Integer.class,
+            fuel)
+        > 0) throw conflict("A reversed fuel receipt cannot be allocated");
+    occurred(instant(entry, "filled_at"), trip);
+    BigDecimal used =
+        db.queryForObject(
+            "select coalesce(sum(quantity_litres),0) from fuel_allocations where fuel_id=? and"
+                + " status in ('PENDING','APPROVED')",
+            BigDecimal.class,
+            fuel);
+    if (used.add(r.quantityLitres()).compareTo(decimal(entry, "quantity_litres")) > 0)
+      throw conflict("Allocated litres exceed the remaining fuel receipt quantity");
+    if (db.queryForObject(
+            "select count(*) from fuel_allocation_claims where fuel_id=? and trip_id=?",
+            Integer.class,
+            fuel,
+            r.tripId())
+        > 0) throw conflict("This trip already has an allocation from the fuel receipt");
+    BigDecimal allocated = amount(r.quantityLitres(), decimal(entry, "actual_price_per_litre"));
+    db.update(
+        "insert into"
+            + " fuel_allocations(id,fuel_id,trip_id,quantity_litres,amount,reason,evidence_reference,submitted_by,create_payload)"
+            + " values(?,?,?,?,?,?,?,?,?)",
+        r.allocationId(),
+        fuel,
+        r.tripId(),
+        r.quantityLitres(),
+        allocated,
+        r.reason().strip(),
+        r.evidenceReference().strip(),
+        actor(),
+        body);
+    db.update(
+        "insert into fuel_allocation_claims(fuel_id,trip_id,allocation_id) values(?,?,?)",
+        fuel,
+        r.tripId(),
+        r.allocationId());
+    audit.record("FUEL_ALLOCATION_SUBMITTED", "FUEL_ALLOCATION", r.allocationId(), "Fuel=" + fuel);
+    return claimView(
+        "fuel_allocations", r.allocationId(), "allocation_id", "fuel_allocation_events", false);
+  }
+
+  Map<String, Object> allocation(UUID id) {
+    return claimView("fuel_allocations", id, "allocation_id", "fuel_allocation_events", false);
+  }
+
+  List<Map<String, Object>> listAllocations(int page, int size) {
+    return claimList("fuel_allocations", "allocation_id", "fuel_allocation_events", page, size);
+  }
+
+  Map<String, Object> decideAllocation(UUID id, OperatingDtos.Review r, boolean approve) {
+    var preview = one("fuel_allocations", id, false);
+    var links =
+        db.queryForList(
+            "select truck_id,trip_id from fuel_entries where id=?", uuid(preview, "fuel_id"));
+    var link = normalize(links.getFirst());
+    context(uuid(preview, "trip_id"), uuid(link, "truck_id"));
+    trucks.lockTankCapacity(uuid(link, "truck_id"));
+    var record = one("fuel_allocations", id, true);
+    var entry = one("fuel_entries", uuid(record, "fuel_id"), true);
+    String action = approve ? "APPROVE" : "REJECT";
+    if (replayReview(
+        "fuel_allocation_events", r.eventId(), id, "allocation_id", action, r.reason()))
+      return claimView("fuel_allocations", id, "allocation_id", "fuel_allocation_events", true);
+    if (!"PENDING".equals(record.get("status"))) throw conflict("Fuel allocation already reviewed");
+    if (actor().equals(record.get("submitted_by")))
+      throw conflict("A different user must review the fuel allocation");
+    if (approve) {
+      if (!"APPROVED".equals(entry.get("status")) || entry.get("trip_id") != null)
+        throw conflict("Only an approved truck-only fuel receipt can be allocated");
+      occurred(instant(entry, "filled_at"), context(uuid(record, "trip_id"), uuid(link, "truck_id")));
+      BigDecimal used =
+          db.queryForObject(
+              "select coalesce(sum(quantity_litres),0) from fuel_allocations where fuel_id=? and"
+                  + " id<>? and status in ('PENDING','APPROVED')",
+              BigDecimal.class,
+              uuid(record, "fuel_id"),
+              id);
+      if (used.add(decimal(record, "quantity_litres")).compareTo(decimal(entry, "quantity_litres"))
+          > 0) throw conflict("Allocated litres exceed the remaining fuel receipt quantity");
+    }
+    db.update(
+        "insert into fuel_allocation_events(id,allocation_id,action,reason,actor) values(?,?,?,?,?)",
+        r.eventId(),
+        id,
+        action,
+        r.reason(),
+        actor());
+    db.update(
+        "update fuel_allocations set status=?,reviewed_by=?,reviewed_at=current_timestamp,review_reason=? where id=?",
+        approve ? "APPROVED" : "REJECTED",
+        actor(),
+        r.reason(),
+        id);
+    if (!approve) db.update("delete from fuel_allocation_claims where allocation_id=?", id);
+    audit.record(
+        approve ? "FUEL_ALLOCATION_APPROVED" : "FUEL_ALLOCATION_REJECTED",
+        "FUEL_ALLOCATION",
+        id,
+        "Event=" + r.eventId());
+    return claimView("fuel_allocations", id, "allocation_id", "fuel_allocation_events", false);
   }
 }

@@ -16,7 +16,10 @@ class DocumentController {
     TRIP,
     INCIDENT,
     FUEL,
-    EXPENSE
+    EXPENSE,
+    STOCK_ADJUSTMENT,
+    STOCK_TRANSFER,
+    STOCK_OPENING
   }
 
   private final DocumentService service;

@@ -141,4 +141,74 @@ class OperatingController {
       @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Decision r) {
     return service.decideReverse(id, r, false);
   }
+
+  @PostMapping("/odometer-resets")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  ResponseEntity<Map<String, Object>> odometerReset(
+      @Valid @RequestBody OperatingDtos.OdometerReset r) {
+    var result = service.resetOdometer(r);
+    return ResponseEntity.status(Boolean.TRUE.equals(result.get("replayed")) ? 200 : 201)
+        .body(result);
+  }
+
+  @GetMapping("/odometer-resets/{id}")
+  Map<String, Object> odometerReset(@PathVariable UUID id) {
+    return service.odometerReset(id);
+  }
+
+  @GetMapping("/odometer-resets")
+  List<Map<String, Object>> odometerResets(
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return service.listResets(page, size);
+  }
+
+  @PostMapping("/odometer-resets/{id}/approve")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> approveReset(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Review r) {
+    return service.decideReset(id, r, true);
+  }
+
+  @PostMapping("/odometer-resets/{id}/reject")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> rejectReset(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Review r) {
+    return service.decideReset(id, r, false);
+  }
+
+  @PostMapping("/fuel/entries/{id}/allocations")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  ResponseEntity<Map<String, Object>> allocate(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.FuelAllocation r) {
+    var result = service.allocate(id, r);
+    return ResponseEntity.status(Boolean.TRUE.equals(result.get("replayed")) ? 200 : 201)
+        .body(result);
+  }
+
+  @GetMapping("/fuel-allocations/{id}")
+  Map<String, Object> allocation(@PathVariable UUID id) {
+    return service.allocation(id);
+  }
+
+  @GetMapping("/fuel-allocations")
+  List<Map<String, Object>> allocations(
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return service.listAllocations(page, size);
+  }
+
+  @PostMapping("/fuel-allocations/{id}/approve")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> approveAllocation(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Review r) {
+    return service.decideAllocation(id, r, true);
+  }
+
+  @PostMapping("/fuel-allocations/{id}/reject")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> rejectAllocation(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Review r) {
+    return service.decideAllocation(id, r, false);
+  }
 }
