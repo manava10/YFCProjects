@@ -3,6 +3,7 @@ ALTER TABLE yards ADD CONSTRAINT yards_kind_check CHECK (kind IN ('OPERATING','Q
 
 ALTER TABLE private_documents ADD COLUMN target_type_v VARCHAR(24);
 UPDATE private_documents SET target_type_v = target_type;
+DROP INDEX ix_private_documents_target;
 ALTER TABLE private_documents DROP COLUMN target_type;
 ALTER TABLE private_documents RENAME COLUMN target_type_v TO target_type;
 ALTER TABLE private_documents ALTER COLUMN target_type SET NOT NULL;

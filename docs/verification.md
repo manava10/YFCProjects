@@ -6,9 +6,9 @@ Last checked: 21 October 2026.
 
 `mvn verify` builds the executable Spring Boot JAR and runs the architecture and API acceptance tests.
 
-Results: **217 local checks passed** (207 optional PostgreSQL cases skipped in the local-only run). Sixteen PostgreSQL acceptance suites are present. On 21 October 2026 all **204 existing PostgreSQL cases passed** against yfc_test on AWS Aurora PostgreSQL 17.9 with IAM and verified TLS, which applied Flyway V16 to yfc_test. V17 correction and trip cases were then run against the same test database after the live yfc migrate.
+Results: **222 local checks passed** (212 optional PostgreSQL cases skipped in the local-only run). Sixteen PostgreSQL acceptance suites are present. On 21 October 2026 all **204 existing PostgreSQL cases passed** against yfc_test on AWS Aurora PostgreSQL 17.9 with IAM and verified TLS, which applied Flyway V16 to yfc_test. V17 correction and trip cases were then run against the same test database after the live yfc migrate. V19 local H2 checks include quarantine yards, cross-branch operating transfers, odometer resets, fuel allocations and stock-document targets.
 
-AWS runtime: Flyway applied V15, V16 and V17 to the live yfc application database in one start. Health is UP. No live treasury accounts, money vouchers, financial profiles, chart accounts or journals were seeded, and no bank transfers were executed. Existing operational data was preserved.
+AWS runtime: Flyway applied V15, V16 and V17 to the live yfc application database in one start. V19 is ready to apply on the next live start. Health is UP. No live treasury accounts, money vouchers, financial profiles, chart accounts or journals were seeded, and no bank transfers were executed. Existing operational data was preserved.
 
 IAM checks verify fresh token generation per physical connection, removal of temporary password properties, sanitized provider errors, rejection of credential overrides and mandatory certificate/hostname verification. The signed-in default CLI session is reused through a credential-process provider; no pasted tokens or long-lived access keys are saved in the application environment.
 

@@ -670,7 +670,7 @@ class OperatingJourneyTest {
   @Test
   void approvedOdometerResetAllowsALowerLaterReading() throws Exception {
     var f = fixture();
-    Instant first = now().minusSeconds(120);
+    Instant first = now().minusSeconds(180);
     String earlier = id(create("/api/v1/fuel/entries", fuel(f, first, "1000.0")));
     review(fuelPath(earlier, "approve"), decision(1), 200);
     var reset =
@@ -682,7 +682,7 @@ class OperatingJourneyTest {
             "newReading",
             new BigDecimal("50.0"),
             "resetAt",
-            now().minusSeconds(30).toString(),
+            now().minusSeconds(90).toString(),
             "reason",
             "Dashboard cluster replaced",
             "evidenceReference",
@@ -690,9 +690,9 @@ class OperatingJourneyTest {
     action("/api/v1/odometer-resets", reset, 201);
     action("/api/v1/odometer-resets", reset, 200);
     review("/api/v1/odometer-resets/" + reset.get("resetId") + "/approve", reviewBody(), 200);
-    String later = id(create("/api/v1/fuel/entries", fuel(f, now(), "80.0")));
+    String later = id(create("/api/v1/fuel/entries", fuel(f, now().minusSeconds(30), "80.0")));
     review(fuelPath(later, "approve"), decision(1), 200);
-    String tooLow = id(create("/api/v1/fuel/entries", fuel(f, now().plusSeconds(10), "40.0")));
+    String tooLow = id(create("/api/v1/fuel/entries", fuel(f, now().minusSeconds(10), "40.0")));
     review(fuelPath(tooLow, "approve"), decision(1), 409);
   }
 
