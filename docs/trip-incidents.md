@@ -2,7 +2,7 @@
 
 Staff can record BREAKDOWN, ACCIDENT, DELAY, SHORTAGE, DAMAGE or OTHER incidents against a trip, then document their resolution. This is an operational register: it does not change trip status, dispatch/delivery weights, billing, inventory, payments or approved costs. Recording a shortage does not authorize a return or customer credit. Ordered-quantity billing remains unchanged.
 
-No new environment variables or AWS resources are needed. Startup applies migration V9 to the selected application database. Evidence fields contain document/log references; private file uploads remain pending.
+No new environment variables or AWS resources are needed. Startup applies migration V9 to the selected application database. Evidence fields contain document/log references; private attachments are available separately through the V10 document API.
 
 ## Permissions
 
@@ -48,3 +48,7 @@ POST `/api/v1/trips/{tripId}/incidents/{incidentId}/resolve`
 An OPEN incident becomes RESOLVED. The original report and the resolution are retained. Both actions create audit entries in the same transaction. Exact event retries return 200; conflicting event reuse or a new resolution of an already resolved incident returns 409. Existing incidents can be resolved even after trip cancellation. There is no reopen/delete action.
 
 Writes serialize through the owning order and trip, consistent with trip execution. Database uniqueness protects report IDs and resolution event IDs. Concurrent identical reports create one record; conflicting resolutions have one winner. This workflow does not block dispatch automatically, create emergency notifications, settle claims, manage physical returns, or approve financial adjustments.
+
+## Stored attachments
+
+Private database-backed file attachments are now available alongside text evidence references. See [private documents](private-documents.md) for upload/download APIs and limits. Existing evidence fields are not automatically converted into files.

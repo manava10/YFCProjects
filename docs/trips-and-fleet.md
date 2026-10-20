@@ -38,7 +38,7 @@ Status is ACTIVE, INACTIVE or MAINTENANCE. Expired dates may be entered, but blo
 
 GET `/api/v1/trucks/{id}` includes its current active trip reference; GET `/api/v1/trucks?page=0&size=20` lists profiles.
 
-GET `/api/v1/fleet/compliance-alerts?days=30&page=0&size=20` lists trucks with missing details, expired documents or documents expiring within the inclusive window. Optional `branchId` filters the list; days must be 0–365. This is an API listing, not a scheduled email/WhatsApp alert. Driver expiry dates are available in driver profiles; a driver-expiry notification service is not included.
+GET `/api/v1/fleet/compliance-alerts?days=30&page=0&size=20` lists trucks with missing details, expired documents or documents expiring within the inclusive window. GET `/api/v1/fleet/driver-compliance-alerts?days=30&page=0&size=20` lists drivers whose licence expiry is missing or falls on/before that window. Optional `branchId` filters either list; days must be 0–365. These are API listings, not scheduled email/WhatsApp alerts.
 
 ## 2. Register drivers
 
@@ -174,3 +174,5 @@ Allocation/state updates, crew assignments, stock effects, dispatch records and 
 For staff-submitted fuel receipts, independent review and approved operating-cost summaries linked to these trips, see [fuel and operating expenses](fuel-and-operating-expenses.md). Trip execution itself does not create fuel receipts or expenses automatically.
 
 Trip incident reports and audited resolutions are now available; see [trip incidents](trip-incidents.md). They do not change operational weights or financial amounts.
+
+Accepted-material customer returns into YFC yards now use an independent approval workflow; see [returns and stock adjustments](returns-and-stock-adjustments.md). Delivery history and billable ordered quantities stay unchanged.

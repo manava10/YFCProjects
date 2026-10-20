@@ -80,12 +80,26 @@ class OrderJourneyTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.loadedQuantity").value(99))
         .andExpect(jsonPath("$.billableQuantity").value(100));
+    mvc.perform(get("/api/v1/orders").param("size", "100"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content[?(@.id == '" + order + "')].billableQuantity").value(org.hamcrest.Matchers.contains(100.0)));
   }
 
   @Test
   @WithMockUser(roles = "CUSTOMER")
   void externalCustomerCannotAccessInternalRecords() throws Exception {
     mvc.perform(get("/api/v1/customers")).andExpect(status().isForbidden());
+    mvc.perform(get("/api/v1/orders")).andExpect(status().isForbidden());
+  }
+
+  @Test
+  @WithMockUser(roles = "ACCOUNTS")
+  void accountsCanReadOrdersButPageSizeIsBounded() throws Exception {
+    mvc.perform(get("/api/v1/orders").param("size", "1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.size").value(1));
+    mvc.perform(get("/api/v1/orders").param("size", "101"))
+        .andExpect(status().isBadRequest());
   }
 
   @Test

@@ -44,6 +44,15 @@ class FleetOperationsController {
     return fleet.alerts(branchId, days, page, size);
   }
 
+  @GetMapping("/fleet/driver-compliance-alerts")
+  List<Map<String, Object>> driverAlerts(
+      @RequestParam(required = false) UUID branchId,
+      @RequestParam(defaultValue = "30") @Min(0) @Max(365) int days,
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return fleet.driverAlerts(branchId, days, page, size);
+  }
+
   @PostMapping("/drivers")
   @ResponseStatus(HttpStatus.CREATED)
   Map<String, Object> driver(@Valid @RequestBody FleetOperations.DriverInput r) {

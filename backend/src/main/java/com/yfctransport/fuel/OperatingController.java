@@ -109,4 +109,36 @@ class OperatingController {
   Map<String, Object> costs(@PathVariable UUID id) {
     return service.costs(id);
   }
+
+  @PostMapping("/fuel/entries/{id}/reversals")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  ResponseEntity<Map<String, Object>> reverseFuel(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Reversal r) {
+    var result = service.reverse("FUEL", id, r);
+    return ResponseEntity.status(Boolean.TRUE.equals(result.get("replayed")) ? 200 : 201)
+        .body(result);
+  }
+
+  @PostMapping("/expenses/{id}/reversals")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  ResponseEntity<Map<String, Object>> reverseExpense(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Reversal r) {
+    var result = service.reverse("EXPENSE", id, r);
+    return ResponseEntity.status(Boolean.TRUE.equals(result.get("replayed")) ? 200 : 201)
+        .body(result);
+  }
+
+  @PostMapping("/operating-reversals/{id}/approve")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> approveReverse(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Decision r) {
+    return service.decideReverse(id, r, true);
+  }
+
+  @PostMapping("/operating-reversals/{id}/reject")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','ACCOUNTS')")
+  Map<String, Object> rejectReverse(
+      @PathVariable UUID id, @Valid @RequestBody OperatingDtos.Decision r) {
+    return service.decideReverse(id, r, false);
+  }
 }

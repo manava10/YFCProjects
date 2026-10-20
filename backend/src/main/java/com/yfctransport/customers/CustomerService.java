@@ -16,4 +16,15 @@ class CustomerService implements CustomerRegistry {
   public boolean exists(UUID id) {
     return customers.existsById(id);
   }
+
+  @Override
+  public String name(UUID id) {
+    return customers
+        .findById(id)
+        .orElseThrow(
+            () ->
+                new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.NOT_FOUND, "Customer not found"))
+        .name;
+  }
 }

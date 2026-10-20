@@ -816,4 +816,24 @@ class TripJourneyTest {
     mvc.perform(get("/api/v1/fleet/compliance-alerts").param("days", "-1"))
         .andExpect(status().isBadRequest());
   }
+
+  @Test
+  void driverComplianceAlertsIncludeExpiringLicences() throws Exception {
+    var f = fixture("TRANSPORT");
+    var body = driverBody(f.inventory().sales().branch());
+    body.put("licenseExpiry", h.helpers.today().plusDays(2).toString());
+    String driver = id(h.create("/api/v1/drivers", body));
+    var response =
+        mvc.perform(
+                get("/api/v1/fleet/driver-compliance-alerts")
+                    .param("branchId", f.inventory().sales().branch())
+                    .param("days", "7")
+                    .param("size", "100"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    List<String> ids = JsonPath.read(response, "$[*].id");
+    assertThat(ids).contains(driver);
+  }
 }

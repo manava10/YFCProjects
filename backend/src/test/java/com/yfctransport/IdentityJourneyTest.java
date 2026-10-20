@@ -337,6 +337,23 @@ class IdentityJourneyTest {
   }
 
   @Test
+  void repeatedFailedSignInsAreLockedOut() throws Exception {
+    var admin = admin();
+    String user = username();
+    create(admin, user, "OPERATIONS");
+    for (int i = 0; i < 5; i++)
+      mvc.perform(formLogin().user(user).password("wrong-password-xx"))
+          .andExpect(status().isUnauthorized());
+    var locked =
+        mvc.perform(formLogin().user(user).password("wrong-password-xx"))
+            .andExpect(status().isUnauthorized())
+            .andReturn();
+    assertThat(locked.getResponse().getErrorMessage())
+        .contains("Too many failed sign-in attempts");
+    mvc.perform(formLogin().user(user).password(PASSWORD)).andExpect(status().isUnauthorized());
+  }
+
+  @Test
   void csrfTokenEnablesRealLoginAndLogoutEndsSession() throws Exception {
     var result = mvc.perform(get("/api/v1/csrf")).andExpect(status().isOk()).andReturn();
     String token = JsonPath.read(result.getResponse().getContentAsString(), "$.token");

@@ -140,6 +140,17 @@ class OrderController {
     return view(created);
   }
 
+  @GetMapping
+  @Transactional(readOnly = true)
+  org.springframework.data.domain.Page<OrderView> list(
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return orders.findAll(org.springframework.data.domain.PageRequest.of(page, size,
+        org.springframework.data.domain.Sort.by(
+            org.springframework.data.domain.Sort.Order.desc("createdAt"),
+            org.springframework.data.domain.Sort.Order.desc("id")))).map(this::view);
+  }
+
   @GetMapping("/{id}")
   @Transactional(readOnly = true)
   OrderView get(@PathVariable UUID id) {

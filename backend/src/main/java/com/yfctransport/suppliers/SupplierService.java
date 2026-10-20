@@ -52,6 +52,12 @@ class SupplierService implements SupplierRegistry {
 
   @Override
   @Transactional(readOnly = true)
+  public String name(UUID id) {
+    return supplier(id).name;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public Source requireActiveSource(UUID supplierId, UUID plantId, UUID materialId) {
     requireSupplierActive(supplierId);
     Plant p = plant(supplierId, plantId);

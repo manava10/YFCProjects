@@ -20,7 +20,7 @@ POST `/api/v1/yards`
 {"branchId":"BRANCH_UUID","code":"YARD01","name":"Main yard","address":"Yard address"}
 ```
 
-GET `/api/v1/yards?page=0&size=20` lists yards. SUPER_ADMIN can PATCH `/api/v1/yards/{id}/status` with `{"active":false}`. Inactive yards retain history and allow reservation release, but block new purchasing, reservations, receipts and issues. Yard master edits, deletion and inter-yard transfers are not included.
+GET `/api/v1/yards?page=0&size=20` lists yards. SUPER_ADMIN can PATCH `/api/v1/yards/{id}/status` with `{"active":false}`. Inactive yards retain history and allow reservation release, but block new purchasing, reservations, receipts and issues. Yard master edits, deletion and cross-branch transfers are not included. Same-branch yard transfers use the controlled correction workflow.
 
 ## 2. Issue a purchase order
 
@@ -88,14 +88,14 @@ POST `/api/v1/stock-reservations/{id}/issues`
 
 Issue quantity cannot exceed the reservation's unissued, unreleased balance. Issuing reduces both on-hand and reserved quantity. Reuse the movement UUID for exact retries: first entry 201, exact replay 200, conflicting reuse 409. Issues remain committed to their order item even after leaving the yard.
 
-POST `/api/v1/stock-reservations/{id}/release` with `{"reason":"Unissued balance no longer needed"}` releases the entire unissued balance. Already-issued stock cannot be released. Release affects reserved quantity only. There is no stock deletion, manual negative adjustment or automatic return.
+POST `/api/v1/stock-reservations/{id}/release` with `{"reason":"Unissued balance no longer needed"}` releases the entire unissued balance. Already-issued stock cannot be released. Release affects reserved quantity only. This release endpoint does not delete stock, correct quantities or perform returns. Use the independent V11 adjustment workflow for supported physical corrections and customer returns.
 
 These standalone inventory endpoints record staff actions and do not themselves create trips or update legacy dispatch weights. The [trip workflow](trips-and-fleet.md) now links reservations/direct purchases to trucks and drivers, issues yard stock atomically at dispatch, and records direct receipts at delivery. Use that workflow for new trip execution. A reservation with an allocated trip cannot be released, standalone issues can consume only unclaimed quantity, and a direct PO with active trips cannot be closed or receive new standalone receipts. Yard-issued quantity does not prove customer acceptance.
 
 ## 6. Inspect balances and fulfillment
 
 - GET `/api/v1/yards/{yardId}/stock/{materialId}` returns exact `on_hand`, `reserved`, `available` quantities and unit. A known yard/material without movements returns zero.
-- GET `/api/v1/yards/{yardId}/stock/{materialId}/movements?page=0&size=20` returns accepted receipts and issues with references, actors and timestamps. Reservations/releases are represented by reservation records and audit events, not physical stock movements.
+- GET `/api/v1/yards/{yardId}/stock/{materialId}/movements?page=0&size=20` returns accepted receipts, issues and V11 approved return/count corrections with references, actors and timestamps. Reservations/releases are represented by reservation records and audit events, not physical stock movements.
 - GET `/api/v1/order-items/{id}/fulfillment` returns ordered, allocated, unallocated, direct accepted and yard-issued quantities. Direct accepted and yard-issued are separate measures; the latter is not a delivery confirmation.
 
 Allocation prevents sourcing the same order quantity twice:
@@ -115,4 +115,8 @@ Writes, balance updates and audit records share one transaction. Order allocatio
 
 List endpoints return arrays, accept zero-based `page` and `size` (1–100), and sort newest first with UUID tie-breaking. Persisted inventory fields use lower-case snake_case; fulfillment summary fields use camelCase as shown. Audit and document UUIDs are stable; printed/statutory document numbering is not provided.
 
-Opening stock entry, supplier returns, quarantined stock, stock corrections with approvals, inter-yard transfers, receipt reversal, valuation, AP postings, tax invoices, document uploads and customer/driver portals are later milestones. Initialize this phase with genuine purchase receipts; do not invent purchases to represent opening balances. There are no automatic external notifications or new environment settings.
+Quarantined-stock yards, cross-branch transfers, receipt reversal, valuation, tax invoices, purchase-specific document attachments and customer/driver portals remain later milestones. Opening stock, supplier returns, non-resalable customer returns, approved reversals and same-branch transfers are available in V16. Independently approved customer returns and count corrections are available in V11; private attachments for trips/incidents/fuel/expenses are available in V10. Use the opening-stock workflow for genuine zero-balance yards; do not invent purchases to represent opening balances. There are no automatic external notifications or new environment settings.
+
+## Controlled corrections and customer returns
+
+Accepted customer material can return into same-branch yards after independent approval, including non-resalable returns that consume capacity only. Physical stock count increases/decreases, opening stock, same-branch transfers, supplier returns from yard purchases and approved reversals are also supported. See [returns and stock adjustments](returns-and-stock-adjustments.md). Valuation and quarantined yards remain pending.

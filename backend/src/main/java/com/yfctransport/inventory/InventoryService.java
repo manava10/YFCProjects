@@ -656,8 +656,16 @@ class InventoryService implements TripSupply {
   List<Map<String, Object>> movements(UUID yard, UUID material, int page, int size) {
     return normalized(
         db.queryForList(
-            "select * from stock_movements where yard_id=? and material_id=? order by created_at"
-                + " desc,id desc limit ? offset ?",
+            "select * from (select"
+                + " id,yard_id,material_id,kind,quantity,receipt_id,reservation_id,reference,recorded_by,created_at,cast(null"
+                + " as uuid) as adjustment_id from stock_movements union all select"
+                + " id,yard_id,material_id,kind,quantity,cast(null as uuid),cast(null as"
+                + " uuid),reference,recorded_by,created_at,adjustment_id from"
+                + " stock_adjustment_movements union all select"
+                + " id,yard_id,material_id,kind,quantity,cast(null as uuid),cast(null as"
+                + " uuid),reference,recorded_by,created_at,cast(null as uuid) from"
+                + " stock_correction_movements) all_movements where yard_id=? and material_id=?"
+                + " order by created_at desc,id desc limit ? offset ?",
             yard,
             material,
             size,

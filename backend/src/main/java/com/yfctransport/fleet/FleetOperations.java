@@ -183,6 +183,23 @@ class FleetOperations implements FleetAssignments {
     return db.queryForList(sql, args.toArray()).stream().map(this::normalize).toList();
   }
 
+  @Transactional(readOnly = true)
+  List<Map<String, Object>> driverAlerts(UUID branch, int days, int page, int size) {
+    LocalDate until = LocalDate.now(clock).plusDays(days);
+    String sql =
+        "select id,name,branch_id,license_number,license_expiry,active from drivers where"
+            + " license_expiry is null or license_expiry<=?";
+    var args = new ArrayList<Object>(List.of(until));
+    if (branch != null) {
+      sql += " and branch_id=?";
+      args.add(branch);
+    }
+    sql += " order by name,id limit ? offset ?";
+    args.add(size);
+    args.add((long) page * size);
+    return db.queryForList(sql, args.toArray()).stream().map(this::normalize).toList();
+  }
+
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Vehicle requireTruck(UUID id, UUID branch, LocalDate date) {

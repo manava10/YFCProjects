@@ -36,7 +36,7 @@ All profiles now use persistent users. Production uses `SPRING_PROFILES_ACTIVE=p
 
 ## Security and requests
 
-Session login and CSRF protection are enabled. GET `/api/v1/csrf` anonymously and retain its session cookie. POST form-encoded `/login` with username, password and the CSRF token parameter. Login returns 204 on success and 401 on failure and rotates the session ID. After login, GET `/api/v1/csrf` again for a fresh token. Include its headerName/token on every write request. POST `/logout` with CSRF returns 204 and invalidates the session. GET `/api/v1/auth/me` returns current username and roles; anonymous API requests return 401.
+Session login and CSRF protection are enabled. GET `/api/v1/csrf` anonymously and retain its session cookie. POST form-encoded `/login` with username, password and the CSRF token parameter. Login returns 204 on success and 401 on failure and rotates the session ID. Five failed attempts for the same username within fifteen minutes return 401 with a lockout message until the window expires; a successful login clears that username's failures. After login, GET `/api/v1/csrf` again for a fresh token. Include its headerName/token on every write request. POST `/logout` with CSRF returns 204 and invalidates the session. GET `/api/v1/auth/me` returns current username and roles; anonymous API requests return 401.
 
 Every authenticated request rechecks the persisted account's enabled state and credential/access version. Disabling a user, changing their role or completing password reset invalidates their existing sessions on the next request. Password/role changes do not cancel work already running in another request.
 
@@ -173,3 +173,15 @@ Drivers and trips: [fleet and execution guide](../docs/trips-and-fleet.md).
 Fuel verification and costs: [operating workflow guide](../docs/fuel-and-operating-expenses.md).
 
 Trip incident reporting and resolution: [API guide](../docs/trip-incidents.md).
+
+Private document uploads and downloads: [API guide](../docs/private-documents.md).
+
+Customer returns and controlled stock corrections: [API guide](../docs/returns-and-stock-adjustments.md).
+
+Accounting foundation and manual journals: [API guide](../docs/accounting-foundation.md).
+
+Customer/supplier financial profiles and party ledgers: [API guide](../docs/party-financial-accounts.md).
+
+Recorded receipts, payments and refunds: [API guide](../docs/receipts-and-payments.md).
+
+Sales and supplier billing preparation: [workflow and API guide](../docs/billing-preparation.md).

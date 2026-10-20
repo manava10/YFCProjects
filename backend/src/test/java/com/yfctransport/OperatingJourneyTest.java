@@ -172,6 +172,31 @@ class OperatingJourneyTest {
   }
 
   @Test
+  void approvedFuelCanBeReversedAndDropsOutOfTripCost() throws Exception {
+    var f = fixture();
+    String id = id(create("/api/v1/fuel/entries", fuel(f, now(), "1000.0")));
+    review(fuelPath(id, "approve"), decision(1), 200);
+    var reversal =
+        Map.of(
+            "reversalId",
+            uid(),
+            "reason",
+            "Pump receipt belonged to a different truck",
+            "evidenceReference",
+            "Supervisor correction note");
+    action("/api/v1/fuel/entries/" + id + "/reversals", reversal, 201);
+    review("/api/v1/operating-reversals/" + reversal.get("reversalId") + "/approve", decision(1), 200);
+    var viewed =
+        JsonPath.parse(
+            mvc.perform(get("/api/v1/fuel/entries/" + id))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+    assertThat(viewed.read("$.reversed", Boolean.class)).isTrue();
+  }
+
+  @Test
   void independentReviewApprovesExactReceiptAmountAndPersistsIdentity() throws Exception {
     var f = fixture();
     var b = fuel(f, now(), "1000.0");

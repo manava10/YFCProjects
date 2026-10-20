@@ -7,6 +7,12 @@ import org.springframework.web.bind.annotation.*;
 
 @RestControllerAdvice
 class ApiErrors {
+  @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+  ProblemDetail uploadTooLarge() {
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.PAYLOAD_TOO_LARGE, "Maximum document size is 2 MiB");
+  }
+
   @ExceptionHandler(IllegalArgumentException.class)
   ProblemDetail invalid(IllegalArgumentException ex) {
     return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());

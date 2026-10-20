@@ -159,8 +159,28 @@ The same history/current-revision/approved-immutability rules apply. Truck, trip
 
 Fuel/expense record fields use camelCase. Raw history/correction rows use lower-case snake_case. Event UUIDs must be reused for retries; a new UUID requests a new action.
 
+## 7. Reverse an approved fuel receipt or expense
+
+POST `/api/v1/fuel/entries/{id}/reversals` or POST `/api/v1/expenses/{id}/reversals`
+
+```json
+{
+  "reversalId":"CLIENT_GENERATED_UUID",
+  "reason":"Approved receipt belonged to a different truck",
+  "evidenceReference":"Signed operating reversal evidence"
+}
+```
+
+OPERATIONS submit. Only an APPROVED record can be reversed, and one PENDING or APPROVED reversal may claim that source. ACCOUNTS approve or reject with POST `/api/v1/operating-reversals/{id}/approve` or `/reject` using the existing operating decision payload, including `revision`. The reviewer must be a different username. Exact UUID retries are safe.
+
+Approved reversals remain on the original fuel/expense record (`reversed: true`) and drop that cost and purchased litres from GET `/api/v1/trips/{id}/operating-costs`. They do not delete the original receipt, post an accounting contra or reverse a money voucher.
+
 ## Consistency and remaining scope
 
 Lock order is owning sales order/trip when linked → truck → operating record → selected rate when needed. Truck locks serialize approved odometer chronology across trip and truck-only receipts. Reviewed state, immutable history, audit entries and rate changes share the same transaction. Database constraints protect positive/exact fuel amounts, matching trip/truck ownership, review separation and approval evidence.
 
-Receipt evidence is a reference only. This phase does not upload or secure files, validate their authenticity, integrate petrol pumps/FASTag, deliver notifications, measure tank levels, calculate actual consumed fuel, post journals, pay suppliers/drivers, or provide financial reversals. Private file storage and controlled incident/reversal workflows remain next steps.
+Receipt evidence fields retain text references. Private attachments are now provided separately by the V10 document API. Neither workflow validates document authenticity, integrates petrol pumps/FASTag, delivers notifications, measures tank levels, calculates actual consumed fuel, posts journals or pays suppliers/drivers.
+
+## Stored attachments
+
+Private database-backed file attachments are now available alongside text evidence references. See [private documents](private-documents.md) for upload/download APIs and limits. Existing evidence fields are not automatically converted into files.

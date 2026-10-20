@@ -109,6 +109,15 @@ class OperatingService {
     r.forEach((k, v) -> out.put(camel(k), v));
     out.put("currency", "INR");
     out.put("replayed", replay);
+    out.put(
+        "reversed",
+        db.queryForObject(
+                "select count(*) from operating_reversals where kind=? and source_id=? and"
+                    + " status='APPROVED'",
+                Integer.class,
+                kind,
+                id)
+            > 0);
     return out;
   }
 
@@ -570,19 +579,22 @@ class OperatingService {
     BigDecimal fuel =
         db.queryForObject(
             "select coalesce(sum(amount),0) from fuel_entries where trip_id=? and"
-                + " status='APPROVED'",
+                + " status='APPROVED' and id not in (select source_id from operating_reversals where"
+                + " kind='FUEL' and status='APPROVED')",
             BigDecimal.class,
             trip);
     BigDecimal other =
         db.queryForObject(
             "select coalesce(sum(amount),0) from operating_expenses where trip_id=? and"
-                + " status='APPROVED'",
+                + " status='APPROVED' and id not in (select source_id from operating_reversals where"
+                + " kind='EXPENSE' and status='APPROVED')",
             BigDecimal.class,
             trip);
     BigDecimal litres =
         db.queryForObject(
             "select coalesce(sum(quantity_litres),0) from fuel_entries where trip_id=? and"
-                + " status='APPROVED'",
+                + " status='APPROVED' and id not in (select source_id from operating_reversals where"
+                + " kind='FUEL' and status='APPROVED')",
             BigDecimal.class,
             trip);
     Integer pending =
@@ -603,6 +615,97 @@ class OperatingService {
     result.put("estimatedFuelLitres", c.estimatedFuelLitres());
     result.put("pendingRecordCount", pending);
     result.put("accountingPosted", false);
+    return result;
+  }
+
+  Map<String, Object> reverse(String kind, UUID source, OperatingDtos.Reversal r) {
+    lock(kind, source);
+    String payload =
+        json.writeValueAsString(
+            List.of(kind, source, r.reason().strip(), r.evidenceReference().strip()));
+    if (db.queryForObject(
+            "select count(*) from operating_reversals where id=?", Integer.class, r.reversalId())
+        > 0) {
+      var old = one("operating_reversals", r.reversalId(), false);
+      if (!payload.equals(old.get("create_payload")))
+        throw conflict("Reversal ID used with different data");
+      old.put("replayed", true);
+      old.remove("create_payload");
+      return old;
+    }
+    var row = one(table(kind), source, true);
+    if (!"APPROVED".equals(row.get("status")))
+      throw conflict("Only an approved operating record can be reversed");
+    if (db.queryForObject(
+            "select count(*) from operating_reversal_claims where kind=? and source_id=?",
+            Integer.class,
+            kind,
+            source)
+        > 0) throw conflict("A reversal is already pending or approved for this record");
+    db.update(
+        "insert into"
+            + " operating_reversals(id,kind,source_id,reason,evidence_reference,submitted_by,create_payload)"
+            + " values(?,?,?,?,?,?,?)",
+        r.reversalId(),
+        kind,
+        source,
+        r.reason().strip(),
+        r.evidenceReference().strip(),
+        actor(),
+        payload);
+    db.update(
+        "insert into operating_reversal_claims(kind,source_id,reversal_id) values(?,?,?)",
+        kind,
+        source,
+        r.reversalId());
+    audit.record("OPERATING_REVERSAL_SUBMITTED", kind, source, "Reversal=" + r.reversalId());
+    var result = one("operating_reversals", r.reversalId(), false);
+    result.remove("create_payload");
+    result.put("replayed", false);
+    return result;
+  }
+
+  Map<String, Object> decideReverse(UUID id, OperatingDtos.Decision r, boolean approve) {
+    var record = one("operating_reversals", id, true);
+    String action = approve ? "APPROVE" : "REJECT";
+    var old = db.queryForList("select * from operating_reversal_events where id=?", r.eventId());
+    if (!old.isEmpty()) {
+      var event = new LinkedHashMap<String, Object>();
+      old.getFirst().forEach((k, v) -> event.put(k.toLowerCase(Locale.ROOT), v));
+      if (!id.equals(event.get("reversal_id"))
+          || !action.equals(event.get("action"))
+          || !r.reason().equals(event.get("reason"))
+          || !actor().equals(event.get("actor")))
+        throw conflict("Review event ID used with different data or actor");
+      record.remove("create_payload");
+      record.put("replayed", true);
+      return record;
+    }
+    if (!"PENDING".equals(record.get("status"))) throw conflict("Reversal already reviewed");
+    if (actor().equals(record.get("submitted_by")))
+      throw conflict("A different user must review the reversal");
+    db.update(
+        "insert into operating_reversal_events(id,reversal_id,action,reason,actor) values(?,?,?,?,?)",
+        r.eventId(),
+        id,
+        action,
+        r.reason(),
+        actor());
+    db.update(
+        "update operating_reversals set status=?,reviewed_by=?,reviewed_at=current_timestamp,review_reason=? where id=?",
+        approve ? "APPROVED" : "REJECTED",
+        actor(),
+        r.reason(),
+        id);
+    if (!approve) db.update("delete from operating_reversal_claims where reversal_id=?", id);
+    audit.record(
+        approve ? "OPERATING_REVERSAL_APPROVED" : "OPERATING_REVERSAL_REJECTED",
+        (String) record.get("kind"),
+        (UUID) record.get("source_id"),
+        "Event=" + r.eventId());
+    var result = one("operating_reversals", id, false);
+    result.remove("create_payload");
+    result.put("replayed", false);
     return result;
   }
 }

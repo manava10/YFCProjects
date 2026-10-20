@@ -1,18 +1,48 @@
 # Backend verification
 
-Last checked: 19 October 2026.
+Last checked: 20 October 2026.
 
-## Fuel review, expenses, trips and core ERP workflows
+## Backend operational workflows
 
 `mvn verify` builds the executable Spring Boot JAR and runs the architecture and API acceptance tests.
 
-Results: **127 local checks passed** (with 117 optional PostgreSQL cases skipped in the local-only run). All 25 affected fuel/expense PostgreSQL cases passed against AWS Aurora PostgreSQL 17.9 with IAM and verified TLS. The preceding trip milestone passed its complete 85-case Aurora regression run; those suites were not repeated in this phase.
+Results: **214 local checks passed** (204 optional PostgreSQL cases skipped in the local-only run). Sixteen PostgreSQL acceptance suites are present, including the new correction suite. All **42 affected PostgreSQL cases passed** against the separate AWS Aurora PostgreSQL 17.9 test database with IAM and verified TLS in the earlier V14 money-voucher phase: 18 accounting, 13 party-finance and 11 money-voucher cases. The first Aurora attempt encountered DNS/connectivity errors after the computer slept; the complete 42-case rerun passed with no failures or errors. The deliberate audit-actor overflow warning in accounting tests verifies transactional rollback. V15/V16 PostgreSQL suites were not repeated against Aurora in this phase; earlier results include 29 affected return/inventory cases, 9 document cases, 7 incident cases, 25 affected fuel cases and the trip milestone's 85-case Aurora run.
 
-AWS runtime: yfc and yfc_test databases exist. Eight Flyway migrations applied to the yfc application database; the initial administrator was initialized. The backend is listening on localhost:8080. Health UP, administrator login, SUPER_ADMIN role, authenticated RFQ/inventory/trip/truck/driver/compliance/fuel/expense APIs and logout were verified over HTTP without displaying credentials.
+AWS runtime: migration V14 was the last version applied to both yfc_test and the yfc application database. V15 and V16 exist in this repository and are exercised locally against H2 PostgreSQL-compatibility mode; they still need a controlled Flyway apply on Aurora before those endpoints are used live. Previous live health UP, administrator login/role verification, existing operational/accounting lists, party and money lists, trial/party balances, invalid journal/profile/voucher rejection and logout passed. Live checks created no treasury accounts, money vouchers, financial profiles, chart accounts or journals; successful financial writes were exercised only in yfc_test. No existing balances were automatically assigned or migrated, and no bank transfers were executed.
 
 IAM checks verify fresh token generation per physical connection, removal of temporary password properties, sanitized provider errors, rejection of credential overrides and mandatory certificate/hostname verification. The signed-in default CLI session is reused through a credential-process provider; no pasted tokens or long-lived access keys are saved in the application environment.
 
 Coverage:
+
+- Registered CASH/BANK asset accounts are branch-bound and exclusive of party accounts; existing journal history prevents registration.
+- Customer receipts, supplier payments and both refund directions generate fixed balanced draft journals with evidence and exact retries.
+- Independent posting, generic journal review consistency, normalized reference reservations and release on rejection.
+- Source-linked contra reversals retain original records and reference claims; source status reflects posted reversals.
+- Cash posting preserves every recorded daily closing balance, including backdated and concurrent payments; bank balances may be negative.
+- Customer/supplier refunds are capped by posted branch balances through the entry date, including concurrent requests and generic posting.
+- Voucher input precision, role/CSRF restrictions, account activation and prevention of adopting an existing manual journal.
+
+- Dedicated customer ASSET/supplier LIABILITY links require unused active accounts, with one permanent account per party.
+- Audited terms versions, optional customer credit limits, clearing limits and actor-bound exact retries.
+- Party-ledger and summary balance signs, zero/credit/advance classifications, posted reversals and branch/date filters.
+- Concurrent mapping and stale terms protection; historical settlement records remain available for inactive suppliers.
+
+- Configurable ledger accounts and activation history, non-overlapping financial periods and controlled closure.
+- Exact balanced manual journals, independent posting/rejection, immutable reviewed records and idempotent events.
+- Contra reversals preserve originals; rejected reversals release claims and concurrent requests cannot duplicate a reversal.
+- Atomic journal numbering/audit rollback; posted-only trial balance and repeatable-read account ledgers with correct opening/running/paged balances.
+
+- Accepted-material customer returns into same-branch yards; pending plus approved returns cannot exceed trip accepted delivery.
+- Independently approved physical stock corrections, stale-count checks, nonnegative/reserved stock and combined movement history.
+- Rejection releases return capacity; original order quantities and delivery weights remain unchanged.
+- Non-resalable customer returns consume capacity without increasing on-hand stock.
+- Opening stock on a zero balance, same-branch transfers, supplier returns from yard purchases and approved reversals of usable stock.
+- Before-tax DRAFT journals from READY billing preparations onto party accounts, with independent journal posting.
+- Approved fuel/expense reversals excluded from trip operating-cost summaries.
+- Driver licence expiry listing and login lockout after five failed attempts in fifteen minutes.
+
+- Private document upload/download, metadata without bytes, SHA-256 identity and immutable target links.
+- File size/type/name/image validation, target existence, staff-only access, CSRF, per-record limits and concurrent identical upload retries.
 
 - Trip incident reports and immutable resolutions, original report retention, audit entries and exact retries.
 - Incident occurrence windows, cancelled trips, parent ownership, permissions/CSRF and concurrent report/resolution conflicts.
@@ -45,7 +75,7 @@ Coverage:
 - Inactive records rejected for new linked orders/associations; historical records remain readable.
 - Normalized order IDs, automatic branch/project derivation and preserved name/address snapshots.
 - Composite database constraints reject cross-customer order reassignment.
-- Upgrade from schema version 3 with existing customer/order data to version 9 preserves that order, its amount and dispatch item linkage, and legacy fuel amounts/status migration (H2).
+- Upgrade from schema version 3 with existing customer/order data to version 16 preserves that order, its amount and dispatch item linkage, and legacy fuel amounts/status migration (H2).
 - Master code uniqueness, input validation, permission restrictions and transactional audit rollback.
 - Local helper script syntax checks and owner-only environment file permissions.
 
@@ -63,8 +93,8 @@ Coverage:
 - Audit entries include actors without password/reset secrets; failed duplicate user creation rolls back its audit entry.
 - Existing ordered-quantity billing, dispatch duplication protection and historical fuel receipt costs remain covered.
 
-CI configuration provisions PostgreSQL 17 and enables all nine PostgreSQL acceptance suites through YFC_TEST_POSTGRES_URL. No CI run has been dispatched or observed from this workspace.
+CI configuration provisions PostgreSQL 17 and enables all sixteen PostgreSQL acceptance suites through YFC_TEST_POSTGRES_URL. No CI run has been dispatched or observed from this workspace.
 
 ## Remaining verification
 
-Docker image build, email delivery, custom frontend UI, MFA, rate limiting and load tests have not been verified here. PostgreSQL migration, order workflows and account/reset concurrency were verified against the separate AWS test database. Reset tokens are delivered manually by an administrator; there is no configured email provider. Frontend user-management screens and external record ownership are later milestones.
+Docker image build, email delivery, custom frontend UI, MFA and load tests have not been verified here. Application login lockout is covered by local identity tests. PostgreSQL migration, order workflows and account/reset concurrency were verified against the separate AWS test database through V14. V15/V16 still need an Aurora apply and PostgreSQL acceptance rerun. Reset tokens are delivered manually by an administrator; there is no configured email provider. Frontend user-management screens and external record ownership are later milestones.

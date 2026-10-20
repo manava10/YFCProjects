@@ -87,6 +87,11 @@ class OperatingDtos {
     }
   }
 
+  record Reversal(
+      @NotNull UUID reversalId,
+      @NotBlank @Size(max = 1000) String reason,
+      @NotBlank @Size(max = 500) String evidenceReference) {}
+
   record CorrectRate(
       @NotNull UUID eventId,
       @NotNull @DecimalMin("0.01") @Digits(integer = 8, fraction = 2) BigDecimal expectedPrice,

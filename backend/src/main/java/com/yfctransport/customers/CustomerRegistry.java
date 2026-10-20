@@ -4,4 +4,6 @@ import java.util.UUID;
 
 public interface CustomerRegistry {
   boolean exists(UUID id);
+
+  String name(UUID id);
 }
