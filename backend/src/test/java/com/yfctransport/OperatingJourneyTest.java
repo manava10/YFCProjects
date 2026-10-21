@@ -697,6 +697,46 @@ class OperatingJourneyTest {
   }
 
   @Test
+  void backdatedOdometerResetCannotInvalidateApprovedLaterReadings() throws Exception {
+    var f = fixture();
+    Instant resetAt = now().minusSeconds(90);
+    var reset =
+        Map.of(
+            "resetId",
+            uid(),
+            "truckId",
+            f.truck(),
+            "newReading",
+            new BigDecimal("500.0"),
+            "resetAt",
+            resetAt.toString(),
+            "reason",
+            "Dashboard cluster replaced",
+            "evidenceReference",
+            "Workshop replacement note");
+    action("/api/v1/odometer-resets", reset, 201);
+    String later = id(create("/api/v1/fuel/entries", fuel(f, now().minusSeconds(30), "100.0")));
+    review(fuelPath(later, "approve"), decision(1), 200);
+    review("/api/v1/odometer-resets/" + reset.get("resetId") + "/approve", reviewBody(), 409);
+    review("/api/v1/odometer-resets/" + reset.get("resetId") + "/reject", reviewBody(), 200);
+    var again =
+        Map.of(
+            "resetId",
+            uid(),
+            "truckId",
+            f.truck(),
+            "newReading",
+            new BigDecimal("500.0"),
+            "resetAt",
+            resetAt.toString(),
+            "reason",
+            "Dashboard cluster replaced",
+            "evidenceReference",
+            "Workshop replacement note");
+    action("/api/v1/odometer-resets", again, 409);
+  }
+
+  @Test
   void truckOnlyFuelCanBeSplitAcrossTripsAfterIndependentApproval() throws Exception {
     var f = tripFixture();
     String fuel = id(create("/api/v1/fuel/entries", fuel(f.fuel(), now(), "1000.0")));

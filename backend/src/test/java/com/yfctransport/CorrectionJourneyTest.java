@@ -274,6 +274,54 @@ class CorrectionJourneyTest {
         .isEqualByComparingTo("0");
   }
 
+  @Test
+  void receiptReversalApprovalConflictsWhenBillingAlreadyClaimedTheReceipt() throws Exception {
+    String purchase = h.purchase(f, "YARD", "10");
+    var receipt = h.receipt("10", "10", "10");
+    h.receive(purchase, receipt, 201);
+    String receiptId = receipt.get("receiptId").toString();
+    h.action(
+        "/api/v1/accounting/billing-preparations",
+        new HashMap<>(
+            Map.of(
+                "preparationId",
+                uid(),
+                "kind",
+                "PURCHASE_RECEIPT",
+                "sourceId",
+                receiptId,
+                "preparedOn",
+                h.helpers.today().toString(),
+                "quantityBasis",
+                "ACCEPTED",
+                "reference",
+                uid(),
+                "evidenceReference",
+                "Accepted quotation / supplier agreement reference",
+                "basisReason",
+                "Agreed quantity basis checked against the source records")),
+        201);
+    UUID reversalId = UUID.randomUUID();
+    db.update(
+        "insert into"
+            + " purchase_receipt_reversals(id,receipt_id,reason,evidence_reference,submitted_by,create_payload)"
+            + " values(?,?,?,?,?,?)",
+        reversalId,
+        UUID.fromString(receiptId),
+        "Receipt recorded against the wrong purchase",
+        "Signed receipt reversal note",
+        "stock-submitter",
+        "[]");
+    db.update(
+        "insert into purchase_receipt_reversal_claims(receipt_id,reversal_id) values(?,?)",
+        UUID.fromString(receiptId),
+        reversalId);
+    assertThat(
+            review("/api/v1/purchase-receipt-reversals/" + reversalId + "/approve", "reviewer"))
+        .isEqualTo(409);
+    assertThat(onHand(f.yard())).isEqualByComparingTo("10");
+  }
+
   String otherBranch() throws Exception {
     return h.id(
         h.create(

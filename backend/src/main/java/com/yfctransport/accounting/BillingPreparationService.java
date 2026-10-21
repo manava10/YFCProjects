@@ -59,6 +59,18 @@ class BillingPreparationService {
     return new ResponseStatusException(HttpStatus.CONFLICT, reason);
   }
 
+  private boolean journalBlocksCancel(UUID journalId) {
+    String status =
+        db.queryForObject("select status from journals where id=?", String.class, journalId);
+    if ("DRAFT".equals(status)) return true;
+    if (!"POSTED".equals(status)) return false;
+    return db.queryForObject(
+            "select count(*) from journals where reverses_id=? and status='POSTED'",
+            Integer.class,
+            journalId)
+        == 0;
+  }
+
   private Map<String, Object> norm(Map<String, Object> row) {
     var result = new LinkedHashMap<String, Object>();
     row.forEach((k, v) -> result.put(k.toLowerCase(Locale.ROOT), v));
@@ -348,13 +360,10 @@ class BillingPreparationService {
           "Only draft preparations can be reviewed; ready preparations may be cancelled");
     if (actor().equals(row.get("created_by")))
       throw conflict("A different user must review or cancel the preparation");
-    if (action.equals("CANCEL") && row.get("journal_id") != null) {
-      String journalStatus =
-          db.queryForObject(
-              "select status from journals where id=?", String.class, row.get("journal_id"));
-      if ("DRAFT".equals(journalStatus) || "POSTED".equals(journalStatus))
-        throw conflict("Reject or reverse the linked journal before cancelling this preparation");
-    }
+    if (action.equals("CANCEL")
+        && row.get("journal_id") != null
+        && journalBlocksCancel((UUID) row.get("journal_id")))
+      throw conflict("Reject or reverse the linked journal before cancelling this preparation");
     if (action.equals("READY")) branches.requireActive((UUID) row.get("branch_id"));
     db.update(
         "insert into billing_preparation_events(id,preparation_id,action,reason,actor)"

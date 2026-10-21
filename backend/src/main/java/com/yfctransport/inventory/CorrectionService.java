@@ -47,6 +47,16 @@ class CorrectionService {
     return new ResponseStatusException(HttpStatus.CONFLICT, reason);
   }
 
+  private void requireUnclaimedByBilling(UUID receipt) {
+    if (db.queryForObject(
+            "select count(*) from billing_source_claims where kind='PURCHASE_RECEIPT' and"
+                + " source_id=?",
+            Integer.class,
+            receipt)
+        > 0)
+      throw conflict("Cancel the billing preparation before reversing this receipt");
+  }
+
   private Map<String, Object> one(String table, UUID id, boolean lock) {
     var rows =
         db.queryForList("select * from " + table + " where id=?" + (lock ? " for update" : ""), id);
@@ -533,13 +543,7 @@ class CorrectionService {
             "select count(*) from trip_supply_claims where trip_id=?", Integer.class, receipt)
         > 0)
       throw conflict("Trip delivery receipts are reversed through a trip weight correction");
-    if (db.queryForObject(
-            "select count(*) from billing_source_claims where kind='PURCHASE_RECEIPT' and"
-                + " source_id=?",
-            Integer.class,
-            receipt)
-        > 0)
-      throw conflict("Cancel the billing preparation before reversing this receipt");
+    requireUnclaimedByBilling((UUID) rec.get("id"));
     if (db.queryForObject(
             "select count(*) from purchase_receipt_reversal_claims where receipt_id=?",
             Integer.class,
@@ -586,6 +590,7 @@ class CorrectionService {
       throw conflict("A different user must review the receipt reversal");
     if (approve) {
       var rec = one("purchase_receipts", (UUID) record.get("receipt_id"), true);
+      requireUnclaimedByBilling((UUID) rec.get("id"));
       var p = one("purchase_orders", (UUID) rec.get("purchase_id"), true);
       if (!Set.of("OPEN", "RECEIVED").contains((String) p.get("status")))
         throw conflict("Closed purchases cannot reverse receipts");

@@ -153,6 +153,46 @@ class BillingPreparationJourneyTest {
     assertThat(result.read("$.source_snapshot.orderId", String.class)).isEqualTo(orderId);
   }
 
+  int reviewReversal(String id, String action) throws Exception {
+    return mvc.perform(
+            post("/api/v1/purchase-receipt-reversals/" + id + "/" + action)
+                .with(user("reviewer").roles("ACCOUNTS"))
+                .with(csrf())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(
+                        Map.of("eventId", uid(), "reason", "Physical record independently checked"))))
+        .andReturn()
+        .getResponse()
+        .getStatus();
+  }
+
+  Map<String, Object> reversal() {
+    return Map.of(
+        "reversalId",
+        uid(),
+        "reason",
+        "Receipt recorded against the wrong purchase",
+        "evidenceReference",
+        "Signed receipt reversal note");
+  }
+
+  @Test
+  void pendingOrApprovedReceiptReversalBlocksBillingUntilRejected() throws Exception {
+    String source = receipt("7");
+    var approved = reversal();
+    h.action("/api/v1/purchase-receipts/" + source + "/reversals", approved, 201);
+    h.action(API, body("PURCHASE_RECEIPT", source, "ACCEPTED"), 409);
+    assertThat(reviewReversal(approved.get("reversalId").toString(), "approve")).isEqualTo(200);
+    h.action(API, body("PURCHASE_RECEIPT", source, "ACCEPTED"), 409);
+    String other = receipt("7");
+    var pending = reversal();
+    h.action("/api/v1/purchase-receipts/" + other + "/reversals", pending, 201);
+    h.action(API, body("PURCHASE_RECEIPT", other, "ACCEPTED"), 409);
+    assertThat(reviewReversal(pending.get("reversalId").toString(), "reject")).isEqualTo(200);
+    create(body("PURCHASE_RECEIPT", other, "ACCEPTED"));
+  }
+
   @Test
   void supplierMustExplicitlyChooseTheReceiptWeightAndPreservesEvidence() throws Exception {
     String source = receipt("7");
@@ -517,6 +557,81 @@ class BillingPreparationJourneyTest {
     assertThat(getOne(id).read("$.ledger_posted", Boolean.class)).isTrue();
     assertThat(getOne(id).read("$.journal_status", String.class)).isEqualTo("POSTED");
     assertThat(review(id, "cancel", event(), "reviewer")).isEqualTo(409);
+  }
+
+  void postJournal(String journalId) throws Exception {
+    mvc.perform(
+            post("/api/v1/accounting/journals/" + journalId + "/post")
+                .with(user("ledger-reviewer").roles("ACCOUNTS"))
+                .with(csrf())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "eventId",
+                            uid(),
+                            "reason",
+                            "Party account and income mapping independently checked"))))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void postedReversingJournalAllowsCancellationAndReplacement() throws Exception {
+    String income = account("INCOME");
+    String asset = account("ASSET");
+    h.create(
+        "/api/v1/accounting/parties",
+        Map.of(
+            "profileId",
+            uid(),
+            "partyType",
+            "CUSTOMER",
+            "partyId",
+            f.sales().customer(),
+            "accountId",
+            asset,
+            "paymentTermsDays",
+            30,
+            "creditLimit",
+            new BigDecimal("100000.00")));
+    String period = periodCoveringToday();
+    String id = create(sale());
+    assertThat(review(id, "ready", event(), "reviewer")).isEqualTo(200);
+    var journal =
+        Map.of(
+            "journalId",
+            uid(),
+            "periodId",
+            period,
+            "entryDate",
+            h.helpers.today().toString(),
+            "counterAccountId",
+            income,
+            "description",
+            "Before-tax sales recognition from ordered quantity",
+            "reference",
+            uid());
+    h.action(API + "/" + id + "/journals", journal, 201);
+    postJournal(journal.get("journalId").toString());
+    var reversal =
+        Map.of(
+            "journalId",
+            uid(),
+            "periodId",
+            period,
+            "entryDate",
+            h.helpers.today().toString(),
+            "reason",
+            "Correction approved from source records",
+            "reference",
+            uid());
+    h.create("/api/v1/accounting/journals/" + journal.get("journalId") + "/reversals", reversal);
+    assertThat(review(id, "cancel", event(), "reviewer")).isEqualTo(409);
+    postJournal(reversal.get("journalId").toString());
+    assertThat(review(id, "cancel", event(), "reviewer")).isEqualTo(200);
+    assertThat(getOne(id).read("$.status", String.class)).isEqualTo("CANCELLED");
+    String replacement = create(sale());
+    assertThat(getOne(replacement).read("$.status", String.class)).isEqualTo("DRAFT");
   }
 
   @Test

@@ -216,6 +216,18 @@ class TripService {
     return trip(id, true);
   }
 
+  private void requireAcceptedCoversReturns(UUID trip, BigDecimal accepted) {
+    BigDecimal returns =
+        db.queryForObject(
+            "select coalesce(sum(quantity),0) from stock_adjustments where trip_id=? and"
+                + " kind='CUSTOMER_RETURN' and status in ('PENDING','APPROVED')",
+            BigDecimal.class,
+            trip);
+    if (accepted.compareTo(returns) < 0)
+      throw conflict(
+          "Corrected accepted weight cannot be below pending or approved customer returns");
+  }
+
   private boolean replay(UUID id, UUID event, String action, String body) {
     var rows = db.queryForList("select trip_id,action,payload from trip_events where id=?", event);
     if (rows.isEmpty()) return false;
@@ -465,14 +477,7 @@ class TripService {
     if ((loaded.compareTo(received) != 0 || received.compareTo(r.acceptedQuantity()) != 0)
         && reason == null)
       throw new IllegalArgumentException("Weight differences require a reason");
-    BigDecimal returns =
-        db.queryForObject(
-            "select coalesce(sum(quantity),0) from stock_adjustments where trip_id=? and kind='CUSTOMER_RETURN'"
-                + " and status in ('PENDING','APPROVED')",
-            BigDecimal.class,
-            trip);
-    if (r.acceptedQuantity().compareTo(returns) < 0)
-      throw conflict("Corrected accepted weight cannot be below pending or approved customer returns");
+    requireAcceptedCoversReturns(trip, r.acceptedQuantity());
     if (db.queryForObject(
             "select count(*) from trip_weight_correction_claims where trip_id=?",
             Integer.class,
@@ -532,6 +537,7 @@ class TripService {
       BigDecimal loaded = number(record, "loaded_quantity");
       BigDecimal received = number(record, "received_quantity");
       BigDecimal accepted = number(record, "accepted_quantity");
+      requireAcceptedCoversReturns(trip, accepted);
       BigDecimal capacity =
           db.queryForObject(
               "select capacity_tonnes from trucks where id=?",

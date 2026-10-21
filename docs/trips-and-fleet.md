@@ -170,7 +170,7 @@ Delivered-trip weighbridge mistakes use an independently reviewed correction rat
 }
 ```
 
-OPERATIONS submit. ACCOUNTS approve or reject with POST `/api/v1/trips/weight-corrections/{id}/approve` or `/reject`. The reviewer must be a different username. One PENDING correction may claim a trip. Approval rewrites the trip and linked dispatch weights. Ordered-quantity billing is unchanged. Yard trips restore or issue the loaded-quantity delta against the original reservation. Direct trips rewrite the linked purchase receipt. Customer-return capacity still cannot exceed the corrected accepted quantity. Trip-created purchase receipts cannot be reversed through the receipt-reversal API; correct the trip weights instead.
+OPERATIONS submit. ACCOUNTS approve or reject with POST `/api/v1/trips/weight-corrections/{id}/approve` or `/reject`. The reviewer must be a different username. One PENDING correction may claim a trip. Approval rewrites the trip and linked dispatch weights. Ordered-quantity billing is unchanged. Yard trips restore or issue the loaded-quantity delta against the original reservation. Direct trips rewrite the linked purchase receipt. Customer-return capacity still cannot exceed the corrected accepted quantity; approval re-checks pending and approved returns against that corrected accepted weight. Trip-created purchase receipts cannot be reversed through the receipt-reversal API; correct the trip weights instead.
 
 ## Integration and compatibility
 

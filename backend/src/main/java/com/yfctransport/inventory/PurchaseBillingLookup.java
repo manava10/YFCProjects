@@ -17,8 +17,18 @@ class PurchaseBillingLookup implements PurchaseBilling {
   }
 
   @Override
-  @Transactional(readOnly = true)
+  @Transactional
   public Receipt receipt(UUID id) {
+    var locked = db.queryForList("select id from purchase_receipts where id=? for update", id);
+    if (locked.isEmpty())
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Purchase receipt not found");
+    if (db.queryForObject(
+            "select count(*) from purchase_receipt_reversal_claims where receipt_id=?",
+            Integer.class,
+            id)
+        > 0)
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Cancel or reject the receipt reversal before billing this receipt");
     var rows =
         db.query(
             "select r.*,p.supplier_id,p.branch_id,p.supplier_name,p.material_name,p.rate,p.terms"

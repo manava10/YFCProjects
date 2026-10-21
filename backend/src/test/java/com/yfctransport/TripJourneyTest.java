@@ -935,4 +935,66 @@ class TripJourneyTest {
         .andExpect(jsonPath("$.loaded_quantity").value(29.0))
         .andExpect(jsonPath("$.accepted_quantity").value(27.0));
   }
+
+  @Test
+  void weightCorrectionApprovalRechecksCustomerReturnCapacity() throws Exception {
+    var f = fixture("YARD");
+    String trip = allocate(f);
+    finished(trip);
+    var body =
+        new HashMap<>(
+            Map.of(
+                "correctionId",
+                uid(),
+                "loadedGross",
+                13,
+                "loadedTare",
+                12,
+                "receivedGross",
+                13,
+                "receivedTare",
+                12,
+                "acceptedQuantity",
+                1,
+                "discrepancyReason",
+                "Weighbridge slip recut after independent check",
+                "reason",
+                "Plant slip used the wrong tare",
+                "evidenceReference",
+                "Corrected weighbridge slip"));
+    action("/api/v1/trips/" + trip + "/weight-corrections", body, 201);
+    var returned =
+        new HashMap<>(
+            Map.of(
+                "returnId",
+                uid(),
+                "yardId",
+                f.inventory().yard(),
+                "quantity",
+                new BigDecimal("2"),
+                "receivedOn",
+                h.helpers.today().toString(),
+                "resalable",
+                true,
+                "reason",
+                "Customer returned unused accepted material",
+                "evidenceReference",
+                "Signed return weighbridge slip"));
+    action("/api/v1/trips/" + trip + "/returns", returned, 201);
+    assertThat(
+            review(
+                "/api/v1/stock-adjustments/" + returned.get("returnId") + "/approve", "reviewer"))
+        .isEqualTo(200);
+    assertThat(
+            review(
+                "/api/v1/trips/weight-corrections/" + body.get("correctionId") + "/approve",
+                "reviewer"))
+        .isEqualTo(409);
+    assertThat(
+            db.queryForObject(
+                "select accepted_quantity from trips where id=?",
+                BigDecimal.class,
+                UUID.fromString(trip)))
+        .isEqualByComparingTo("28");
+  }
 }

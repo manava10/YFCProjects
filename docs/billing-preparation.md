@@ -13,7 +13,7 @@ No new environment variables, AWS resources or bank credentials are required. Fl
 
 A sales preparation includes every item on one order and the full ordered quantity. For 100 ordered, 99 loaded and 98 received, the preparation uses **100 tonnes**. Loaded/received quantities remain visible as facts captured when preparing the record. The draft can precede dispatch because billing is agreed on ordered quantity; preparing it does not assert delivery completion. Legacy combined material/freight rates remain combined exactly as saved; no split is invented. TRANSPORT-only orders retain their transport rate and zero material rate.
 
-A supplier preparation covers one complete receipt, with a mandatory basis reason and evidence reference. No supplier billing basis has been assumed. For example, loaded 9 / received 8 / accepted 7 at INR 1,000.55 prepares INR 9,004.95, 8,004.40 or 7,003.85 respectively, depending on the explicitly selected agreement. ACCEPTED cannot be chosen when accepted quantity is zero. Multi-receipt supplier invoices and partial quantity billing remain later work.
+A supplier preparation covers one complete receipt, with a mandatory basis reason and evidence reference. A receipt with a pending or approved reversal cannot be billed; cancel or reject that reversal first. No supplier billing basis has been assumed. For example, loaded 9 / received 8 / accepted 7 at INR 1,000.55 prepares INR 9,004.95, 8,004.40 or 7,003.85 respectively, depending on the explicitly selected agreement. ACCEPTED cannot be chosen when accepted quantity is zero. Multi-receipt supplier invoices and partial quantity billing remain later work.
 
 Prices cannot be submitted or overridden through this API. Material and transport amounts are rounded separately per line to two decimal places using HALF_UP; subtotal sums those rounded components with exact decimal arithmetic. Zero-priced source items remain zero-priced. Tax is pending, not inferred as zero tax, and there is no final payable total.
 
@@ -95,7 +95,7 @@ The caller chooses the counter account. Sales require an active INCOME account; 
 - Sales: debit the customer ASSET, credit the chosen INCOME account for the preparation subtotal.
 - Purchase: debit the chosen EXPENSE account, credit the supplier LIABILITY for the preparation subtotal.
 
-Tax is not inferred. The draft uses the existing journal numbering and independent post/reject workflow. `ledger_posted` stays false until that journal is POSTED. A REJECTED linked journal may be replaced with a new journal UUID. A DRAFT or POSTED linked journal blocks cancellation of the preparation; reject or reverse that journal first. Exact journal-create retries reuse the same journal UUID, preparation, period, date, counter account, normalized description/reference and actor.
+Tax is not inferred. The draft uses the existing journal numbering and independent post/reject workflow. `ledger_posted` stays false until that journal is POSTED. A REJECTED linked journal may be replaced with a new journal UUID. A DRAFT or unreversed POSTED linked journal blocks cancellation of the preparation; reject it, or post a reversing journal, then cancel so a replacement preparation can claim the source. Exact journal-create retries reuse the same journal UUID, preparation, period, date, counter account, normalized description/reference and actor.
 
 This is before-tax commercial posting, not a GST invoice, credit note or payment allocation.
 

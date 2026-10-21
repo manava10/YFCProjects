@@ -6,9 +6,9 @@ Last checked: 21 October 2026.
 
 `mvn verify` builds the executable Spring Boot JAR and runs the architecture and API acceptance tests.
 
-Results: **222 local checks passed** (212 optional PostgreSQL cases skipped in the local-only run). Sixteen PostgreSQL acceptance suites are present. On 21 October 2026 all **204 existing PostgreSQL cases passed** against yfc_test on AWS Aurora PostgreSQL 17.9 with IAM and verified TLS, which applied Flyway V16 to yfc_test. V17 correction and trip cases were then run against the same test database after the live yfc migrate. V19 local H2 checks include quarantine yards, cross-branch operating transfers, odometer resets, fuel allocations and stock-document targets.
+Results: **227 local checks passed** (217 optional PostgreSQL cases skipped in the local-only run). Sixteen PostgreSQL acceptance suites are present. On 21 October 2026 all **217 PostgreSQL cases passed** against yfc_test on AWS Aurora PostgreSQL 17.9 with IAM and verified TLS. Flyway applied V19 to yfc_test during that run (quarantine yards, document targets, odometer resets and fuel allocations). The suite includes the later billing/reversal, weight-correction return-capacity, reversed-journal cancellation and backdated odometer-reset checks.
 
-AWS runtime: Flyway applied V15, V16 and V17 to the live yfc application database in one start. V19 is ready to apply on the next live start. Health is UP. No live treasury accounts, money vouchers, financial profiles, chart accounts or journals were seeded, and no bank transfers were executed. Existing operational data was preserved.
+AWS runtime: Flyway applied V15, V16 and V17 to the live yfc application database in one start. V19 is applied on yfc_test and is ready to apply to live yfc on the next `run-local.sh` start. Health is UP. No live treasury accounts, money vouchers, financial profiles, chart accounts or journals were seeded, and no bank transfers were executed. Existing operational data was preserved.
 
 IAM checks verify fresh token generation per physical connection, removal of temporary password properties, sanitized provider errors, rejection of credential overrides and mandatory certificate/hostname verification. The signed-in default CLI session is reused through a credential-process provider; no pasted tokens or long-lived access keys are saved in the application environment.
 
@@ -38,14 +38,15 @@ Coverage:
 - Non-resalable customer returns consume capacity without increasing on-hand stock unless they enter a quarantine yard.
 - Opening stock on a zero balance, same-branch transfers, supplier returns from yard purchases and approved reversals of usable stock.
 - Quantity-only transfers between operating yards across branches; quarantine yards cannot receive purchases, reservations or issues.
-- Independently reviewed odometer resets that allow a later lower reading after the reset timestamp.
+- Independently reviewed odometer resets that allow a later lower reading after the reset timestamp, and reject a backdated reset that would leave an approved later fill below the new reading.
+- Cancellation of a READY billing preparation after its linked journal has a posted reversal, so a replacement can reclaim the source.
 - Split of approved truck-only fuel receipts onto trips, included in trip operating-cost summaries.
 - Before-tax DRAFT journals from READY billing preparations onto party accounts, with independent journal posting.
 - Approved fuel/expense reversals excluded from trip operating-cost summaries.
 - Driver licence expiry listing and login lockout after five failed attempts in fifteen minutes.
 - Post-dispatch crew reassignment before delivery, with exclusive truck/driver assignment retained.
-- Independently reviewed delivered-trip weight corrections that rewrite dispatch weights without changing ordered-quantity billing.
-- Standalone purchase-receipt reversal after independent approval, restoring accepted yard stock when still available.
+- Independently reviewed delivered-trip weight corrections that rewrite dispatch weights without changing ordered-quantity billing; approval re-checks pending and approved customer returns against the corrected accepted quantity.
+- Standalone purchase-receipt reversal after independent approval, restoring accepted yard stock when still available. Billing cannot claim a reversed or pending-reversal receipt; reversal approval also refuses a receipt already claimed by a billing preparation.
 
 - Private document upload/download, metadata without bytes, SHA-256 identity and immutable target links, including stock openings/transfers/adjustments.
 - File size/type/name/image validation, target existence, staff-only access, CSRF, per-record limits and concurrent identical upload retries.
@@ -103,4 +104,4 @@ CI configuration provisions PostgreSQL 17 and enables all sixteen PostgreSQL acc
 
 ## Remaining verification
 
-Docker image build, email delivery, custom frontend UI, MFA and load tests have not been verified here. Application login lockout is covered by local identity tests. PostgreSQL migration, order workflows and account/reset concurrency were verified against the separate AWS test database through V14. V15/V16 still need an Aurora apply and PostgreSQL acceptance rerun. Reset tokens are delivered manually by an administrator; there is no configured email provider. Frontend user-management screens and external record ownership are later milestones.
+Docker image build, email delivery, custom frontend UI, MFA and load tests have not been verified here. Application login lockout is covered by local identity tests. PostgreSQL acceptance through V19 is verified against yfc_test. Live yfc still needs the next start to apply V19. Reset tokens are delivered manually by an administrator; there is no configured email provider. Frontend user-management screens and external record ownership are later milestones.

@@ -802,6 +802,30 @@ class OperatingService {
     return true;
   }
 
+  private void requireResetFitsApprovedReadings(
+      UUID truck, Instant resetAt, BigDecimal newReading) {
+    java.sql.Timestamp afterBound = java.sql.Timestamp.from(resetAt);
+    var next =
+        db.queryForList(
+            "select reset_at from odometer_resets where truck_id=? and status='APPROVED' and"
+                + " reset_at>? order by reset_at,id limit 1",
+            truck,
+            afterBound);
+    java.sql.Timestamp beforeBound = java.sql.Timestamp.from(Instant.parse("9999-12-31T23:59:59Z"));
+    if (!next.isEmpty())
+      beforeBound = java.sql.Timestamp.from(instant(normalize(next.getFirst()), "reset_at"));
+    BigDecimal later =
+        db.queryForObject(
+            "select min(odometer) from fuel_entries where truck_id=? and status='APPROVED' and"
+                + " filled_at>=? and filled_at<?",
+            BigDecimal.class,
+            truck,
+            afterBound,
+            beforeBound);
+    if (later != null && later.compareTo(newReading) < 0)
+      throw conflict("Odometer reset conflicts with approved filling chronology");
+  }
+
   Map<String, Object> resetOdometer(OperatingDtos.OdometerReset r) {
     trucks.lockTankCapacity(r.truckId());
     String body =
@@ -821,6 +845,7 @@ class OperatingService {
     }
     if (r.resetAt().isAfter(clock.instant()))
       throw new IllegalArgumentException("Odometer reset cannot be in the future");
+    requireResetFitsApprovedReadings(r.truckId(), r.resetAt(), r.newReading());
     if (db.queryForObject(
             "select count(*) from odometer_reset_claims where truck_id=?",
             Integer.class,
@@ -863,6 +888,9 @@ class OperatingService {
     if (!"PENDING".equals(record.get("status"))) throw conflict("Odometer reset already reviewed");
     if (actor().equals(record.get("submitted_by")))
       throw conflict("A different user must review the odometer reset");
+    if (approve)
+      requireResetFitsApprovedReadings(
+          uuid(record, "truck_id"), instant(record, "reset_at"), decimal(record, "new_reading"));
     db.update(
         "insert into odometer_reset_events(id,reset_id,action,reason,actor) values(?,?,?,?,?)",
         r.eventId(),

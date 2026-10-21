@@ -196,7 +196,7 @@ POST `/api/v1/odometer-resets`
 }
 ```
 
-OPERATIONS submit. One pending reset may exist per truck. ACCOUNTS approve or reject with POST `/api/v1/odometer-resets/{id}/approve` or `/reject` and `{"eventId":"UUID","reason":"..."}`. The reviewer must be a different username. `resetAt` cannot be in the future. After approval, later fuel approvals compare odometer readings only within the window after that reset, and cannot fall below `newReading`. Earlier approved fills are unchanged. Exact UUID retries are safe.
+OPERATIONS submit. One pending reset may exist per truck. ACCOUNTS approve or reject with POST `/api/v1/odometer-resets/{id}/approve` or `/reject` and `{"eventId":"UUID","reason":"..."}`. The reviewer must be a different username. `resetAt` cannot be in the future. Submit and approval both reject a reset whose `newReading` would sit above an already approved later fill in that window, so a backdated reset cannot invalidate those readings. After approval, later fuel approvals compare odometer readings only within the window after that reset, and cannot fall below `newReading`. Earlier approved fills are unchanged. Exact UUID retries are safe.
 
 ## 9. Allocate an approved truck-only fuel receipt across trips
 
