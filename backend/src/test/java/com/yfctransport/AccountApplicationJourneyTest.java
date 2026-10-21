@@ -37,6 +37,7 @@ class AccountApplicationJourneyTest {
     body.put("password", "customer-password-1");
     body.put("name", "Site Buyer " + username);
     body.put("mobile", "9876543210");
+    body.put("address", "Plot 12, Kotputli");
     return body;
   }
 
@@ -134,6 +135,7 @@ class AccountApplicationJourneyTest {
     assertThat(portal).doesNotContain(String.valueOf(second.get("name")));
     assertThat(JsonPath.<String>read(portal, "$.profile.name"))
         .isEqualTo(first.get("name"));
+    assertThat(JsonPath.<String>read(portal, "$.profile.address")).isEqualTo("Plot 12, Kotputli");
     mvc.perform(get("/api/v1/customers").with(user(first.get("username").toString()).roles("CUSTOMER")))
         .andExpect(status().isForbidden());
     mvc.perform(get("/api/v1/portal").with(user("ops").roles("OPERATIONS")))

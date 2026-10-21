@@ -1,7 +1,8 @@
 import type { RecordData } from "./api";
 
 export const short = (id?: string) => (id ? id.slice(0, 8).toUpperCase() : "—");
-export const label = (s?: string) => s?.replaceAll("_", " ").toLowerCase() ?? "";
+export const label = (s?: string) =>
+  s?.replaceAll("_", " ").toLowerCase() ?? "";
 export const money = (n: number | string) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -62,6 +63,11 @@ export function readForm(form: HTMLFormElement) {
   const body: Record<string, unknown> = {};
   for (const [key, value] of new FormData(form).entries()) {
     if (typeof value !== "string") continue;
+    // Password whitespace is part of the credential, not form formatting.
+    if (key === "password" || key === "newPassword") {
+      if (value) body[key] = value;
+      continue;
+    }
     const trimmed = value.trim();
     if (!trimmed) continue;
     if (BOOLEANS.has(key)) body[key] = trimmed === "true";
@@ -78,7 +84,13 @@ export function toIst(value: string) {
 }
 
 export function ownedBy(row: RecordData | null | undefined, username: string) {
-  const actor = val(row, "submitted_by", "submittedBy", "created_by", "createdBy");
+  const actor = val(
+    row,
+    "submitted_by",
+    "submittedBy",
+    "created_by",
+    "createdBy",
+  );
   return actor != null && String(actor) === username;
 }
 
@@ -108,4 +120,8 @@ export function nameOf(row: RecordData) {
       "description",
     ) ?? short(String(val(row, "id") ?? "")),
   );
+}
+
+export function isPendingReview(row: RecordData) {
+  return ["PENDING", "PENDING_VERIFICATION"].includes(String(val(row, "status")));
 }

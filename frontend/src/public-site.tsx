@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Menu, X } from "lucide-react";
@@ -91,6 +91,14 @@ function message(error: unknown) {
 
 function PublicBar({ home }: { home: boolean }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [open]);
   const links = nav.map(([href, label]) => [home ? href : `/${href}`, label]);
   const quote = home ? "#order" : "/#order";
   return (
@@ -162,7 +170,11 @@ export function PublicSite() {
   useEffect(() => {
     const root = document.documentElement;
     const previous = root.style.scrollBehavior;
-    root.style.scrollBehavior = "smooth";
+    root.style.scrollBehavior = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches
+      ? "auto"
+      : "smooth";
     return () => {
       root.style.scrollBehavior = previous;
     };
@@ -182,14 +194,25 @@ export function PublicSite() {
       <div className="yfc-public">
         <main className="wrap" style={{ paddingTop: 120 }}>
           <p className="kicker">YFC TRANSPORT</p>
-          <h1 style={{ fontSize: 48, marginTop: 12 }}>The customer page is not up yet.</h1>
+          <h1 style={{ fontSize: 48, marginTop: 12 }}>
+            We couldn’t load the website.
+          </h1>
           <p className="status" style={{ marginTop: 16 }}>
             {site.error instanceof ApiError
               ? site.error.message
-              : "Restart the workspace so the public site can load."}
+              : "Please check your connection and try again."}
           </p>
-          <p style={{ marginTop: 24 }}>
-            <Link className="btn" to="/staff">
+          <p style={{ marginTop: 24, display: "flex", gap: 12 }}>
+            <button
+              className="btn"
+              disabled={site.isFetching}
+              onClick={() => {
+                void site.refetch();
+              }}
+            >
+              {site.isFetching ? "Retrying…" : "Try again"}
+            </button>
+            <Link className="btn ghost" to="/staff">
               Login
             </Link>
           </p>
@@ -204,36 +227,54 @@ export function PublicSite() {
 
   return (
     <div className="yfc-public">
+      <a className="skip-content" href="#public-content">
+        Skip to content
+      </a>
       <PublicBar home />
-
-      <Hero catalog={catalog} />
-      <Stats stats={catalog.stats} />
-      <About profile={catalog.profile} />
-      <Materials
-        materials={catalog.materials}
-        onPick={(id) => {
-          setMaterialId(id);
-          document.getElementById("order")?.scrollIntoView({ behavior: "smooth" });
-        }}
-      />
-      <Plants
-        plants={catalog.plants}
-        onPick={(id) => {
-          setPlantId(id);
-          document.getElementById("order")?.scrollIntoView({ behavior: "smooth" });
-        }}
-      />
-      <Rates materials={catalog.materials} />
-      <Quote
-        catalog={catalog}
-        materialId={chosenMaterial}
-        plantId={chosenPlant}
-        onMaterial={setMaterialId}
-        onPlant={setPlantId}
-        onIssued={setIssued}
-      />
-      <Track focus={issued} />
-      <Contact profile={catalog.profile} />
+      <main id="public-content" tabIndex={-1}>
+        <Hero catalog={catalog} />
+        <Stats stats={catalog.stats} />
+        <About profile={catalog.profile} />
+        <Materials
+          materials={catalog.materials}
+          onPick={(id) => {
+            setMaterialId(id);
+            document
+              .getElementById("order")
+              ?.scrollIntoView({
+                behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+                  .matches
+                  ? "instant"
+                  : "smooth",
+              });
+          }}
+        />
+        <Plants
+          plants={catalog.plants}
+          onPick={(id) => {
+            setPlantId(id);
+            document
+              .getElementById("order")
+              ?.scrollIntoView({
+                behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+                  .matches
+                  ? "instant"
+                  : "smooth",
+              });
+          }}
+        />
+        <Rates materials={catalog.materials} />
+        <Quote
+          catalog={catalog}
+          materialId={chosenMaterial}
+          plantId={chosenPlant}
+          onMaterial={setMaterialId}
+          onPlant={setPlantId}
+          onIssued={setIssued}
+        />
+        <Track focus={issued} />
+        <Contact profile={catalog.profile} />
+      </main>
       <footer className="foot">
         <div className="wrap">
           <div>
@@ -365,7 +406,10 @@ function Materials({
             <p className="kicker">MATERIALS</p>
             <h2>Grades on the yard card.</h2>
           </div>
-          <p>Tap a grade to load it into the quote. Rates are the published ex-plant card.</p>
+          <p>
+            Tap a grade to load it into the quote. Rates are the published
+            ex-plant card.
+          </p>
         </div>
         <ul className="grades">
           {materials.map((item) => (
@@ -385,7 +429,13 @@ function Materials({
   );
 }
 
-function Plants({ plants, onPick }: { plants: Plant[]; onPick: (id: string) => void }) {
+function Plants({
+  plants,
+  onPick,
+}: {
+  plants: Plant[];
+  onPick: (id: string) => void;
+}) {
   return (
     <section className="block" id="plants">
       <div className="wrap">
@@ -417,7 +467,8 @@ function Rates({ materials }: { materials: Material[] }) {
         <p className="kicker">LIVE RATES</p>
         <h2>Today’s ex-plant card.</h2>
         <p className="status" style={{ maxWidth: 520, marginTop: 12 }}>
-          These are the published desk rates. Freight is added on the quote, by plant and drop.
+          These are the published desk rates. Freight is added on the quote, by
+          plant and drop.
         </p>
         <div className="card-table">
           <table>
@@ -459,26 +510,41 @@ function Quote({
   onPlant: (id: string) => void;
   onIssued: (reference: string) => void;
 }) {
-  const [destinationId, setDestinationId] = useState(catalog.destinations[0]?.id ?? "");
+  const [destinationId, setDestinationId] = useState(
+    catalog.destinations[0]?.id ?? "",
+  );
   const [qty, setQty] = useState("20");
   const [mediator, setMediator] = useState("");
   const [error, setError] = useState("");
   const [issued, setIssued] = useState<Ticket | null>(null);
   const [busy, setBusy] = useState(false);
-  const material = catalog.materials.find((item) => item.id === materialId) ?? catalog.materials[0];
-  const plant = catalog.plants.find((item) => item.id === plantId) ?? catalog.plants[0];
+  const material =
+    catalog.materials.find((item) => item.id === materialId) ??
+    catalog.materials[0];
+  const plant =
+    catalog.plants.find((item) => item.id === plantId) ?? catalog.plants[0];
+  const priced = catalog.destinations.filter((item) => {
+    const rate = catalog.freight.find(
+      (lane) => lane.plantId === plant?.id && lane.destinationId === item.id,
+    )?.rate;
+    return rate != null && Number(rate) > 0;
+  });
   const destination =
-    catalog.destinations.find((item) => item.id === destinationId) ?? catalog.destinations[0];
+    priced.find((item) => item.id === destinationId) ?? priced[0];
   const preview = useMemo(() => {
     const tonnes = Number(qty);
     const freight =
       catalog.freight.find(
-        (lane) => lane.plantId === plant?.id && lane.destinationId === destination?.id,
+        (lane) =>
+          lane.plantId === plant?.id && lane.destinationId === destination?.id,
       )?.rate ?? null;
-    const landed = material && freight != null ? Number(material.rate) + Number(freight) : null;
+    const published =
+      freight != null && Number(freight) > 0 ? Number(freight) : null;
+    const landed =
+      material && published != null ? Number(material.rate) + published : null;
     return {
       tonnes: Number.isFinite(tonnes) ? tonnes : 0,
-      freight,
+      freight: published,
       landed,
       total: landed != null && Number.isFinite(tonnes) ? landed * tonnes : null,
     };
@@ -487,8 +553,8 @@ function Quote({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const tonnes = Number(qty);
-    if (!material || !plant || !destination) {
-      setError("The card has no material, plant, or drop to quote.");
+    if (!material || !plant || !destination || preview.freight == null) {
+      setError("Choose a plant and drop that already have a freight rate.");
       return;
     }
     if (!Number.isFinite(tonnes) || tonnes < 1 || tonnes > 500) {
@@ -521,13 +587,17 @@ function Quote({
           <p className="kicker">QUICK ORDER</p>
           <h2>Get Best Quote</h2>
           <p className="status" style={{ marginTop: 12, maxWidth: 460 }}>
-            Material, tonnes, plant, and drop. The ticket shows ex-plant rate plus the freight
-            published for that lane. Operations sees the order on the public desk.
+            Material, tonnes, plant, and drop. The ticket shows ex-plant rate
+            plus the freight published for that lane. Operations sees the order
+            on the public desk.
           </p>
           <form className="form-grid" onSubmit={submit}>
             <label className="field">
               Material
-              <select value={material?.id ?? ""} onChange={(event) => onMaterial(event.target.value)}>
+              <select
+                value={material?.id ?? ""}
+                onChange={(event) => onMaterial(event.target.value)}
+              >
                 {catalog.materials.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -537,11 +607,23 @@ function Quote({
             </label>
             <label className="field">
               Quantity (Ton)
-              <input inputMode="decimal" value={qty} onChange={(event) => setQty(event.target.value)} />
+              <input
+                type="number"
+                inputMode="decimal"
+                min="1"
+                max="500"
+                step="0.001"
+                required
+                value={qty}
+                onChange={(event) => setQty(event.target.value)}
+              />
             </label>
             <label className="field span-2">
               From Plant / Crusher
-              <select value={plant?.id ?? ""} onChange={(event) => onPlant(event.target.value)}>
+              <select
+                value={plant?.id ?? ""}
+                onChange={(event) => onPlant(event.target.value)}
+              >
                 {catalog.plants.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -555,7 +637,7 @@ function Quote({
                 value={destination?.id ?? ""}
                 onChange={(event) => setDestinationId(event.target.value)}
               >
-                {catalog.destinations.map((item) => (
+                {priced.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
@@ -567,6 +649,7 @@ function Quote({
               <input
                 value={mediator}
                 placeholder="Rajpal"
+                maxLength={160}
                 onChange={(event) => setMediator(event.target.value)}
               />
             </label>
@@ -612,11 +695,19 @@ function Quote({
                 </div>
                 <div>
                   <dt>Freight</dt>
-                  <dd>{preview.freight == null ? "—" : `${inr(preview.freight)} / ton`}</dd>
+                  <dd>
+                    {preview.freight == null
+                      ? "—"
+                      : `${inr(preview.freight)} / ton`}
+                  </dd>
                 </div>
                 <div>
                   <dt>Landed</dt>
-                  <dd>{preview.landed == null ? "—" : `${inr(preview.landed)} / ton`}</dd>
+                  <dd>
+                    {preview.landed == null
+                      ? "—"
+                      : `${inr(preview.landed)} / ton`}
+                  </dd>
                 </div>
                 <div>
                   <dt>Quantity</dt>
@@ -631,15 +722,18 @@ function Quote({
                 <div className="issued">
                   <p className="kicker">ORDER {issued.reference}</p>
                   <p>
-                    {issued.materialName} · {issued.quantity} ton · {issued.plantName} →{" "}
-                    {issued.destination}
+                    {issued.materialName} · {issued.quantity} ton ·{" "}
+                    {issued.plantName} → {issued.destination}
                   </p>
-                  <p className="status">Mediator / Reference: {issued.mediator || "—"}</p>
+                  <p className="status">
+                    Mediator / Reference: {issued.mediator || "—"}
+                  </p>
                   <a href="#track">Track this order</a>
                 </div>
               ) : (
                 <p className="status" style={{ marginTop: 16 }}>
-                  Issue a quote to put a trackable order number on the operations desk.
+                  Issue a quote to put a trackable order number on the
+                  operations desk.
                 </p>
               )}
             </div>
@@ -654,24 +748,49 @@ function Track({ focus }: { focus: string }) {
   const [query, setQuery] = useState("");
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [miss, setMiss] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const lookupId = useRef(0);
+  useEffect(
+    () => () => {
+      lookupId.current++;
+    },
+    [],
+  );
   const [recent, setRecent] = useState<string[]>([]);
 
   useEffect(() => {
     if (!focus) return;
     setQuery(focus);
-    setRecent((items) => [focus, ...items.filter((item) => item !== focus)].slice(0, 8));
+    setRecent((items) =>
+      [focus, ...items.filter((item) => item !== focus)].slice(0, 8),
+    );
     void lookup(focus);
   }, [focus]);
 
   async function lookup(reference: string) {
     const key = reference.trim();
     if (!key) return;
+    const attempt = ++lookupId.current;
     setMiss(false);
+    setError("");
+    setTicket(null);
+    setBusy(true);
     try {
-      setTicket(await request<Ticket>(`/api/v1/site/quotes/${encodeURIComponent(key)}`));
-    } catch {
-      setTicket(null);
-      setMiss(true);
+      const result = await request<Ticket>(
+        `/api/v1/site/quotes/${encodeURIComponent(key)}`,
+      );
+      if (attempt !== lookupId.current) return;
+      setTicket(result);
+      setRecent((items) =>
+        [key, ...items.filter((item) => item !== key)].slice(0, 8),
+      );
+    } catch (caught) {
+      if (attempt !== lookupId.current) return;
+      if (caught instanceof ApiError && caught.status === 404) setMiss(true);
+      else setError("Tracking is temporarily unavailable. Please try again.");
+    } finally {
+      if (attempt === lookupId.current) setBusy(false);
     }
   }
 
@@ -690,22 +809,43 @@ function Track({ focus }: { focus: string }) {
             void lookup(query);
           }}
         >
-          <label className="sr-only" htmlFor="order-id" style={{ position: "absolute", left: -9999 }}>
+          <label
+            className="sr-only"
+            htmlFor="order-id"
+            style={{ position: "absolute", left: -9999 }}
+          >
             Order number
           </label>
           <input
             id="order-id"
-            placeholder="YFC-10001"
+            required
+            maxLength={100}
+            autoComplete="off"
+            placeholder="YFC-10001-A1B2C3D4"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
               setMiss(false);
+              setError("");
+              setTicket(null);
+              lookupId.current++;
+              setBusy(false);
             }}
           />
-          <button className="btn" type="submit">
-            Track Order
+          <button className="btn" type="submit" disabled={busy}>
+            {busy ? "Looking up…" : "Track Order"}
           </button>
         </form>
+        {error && (
+          <p className="alert" role="alert">
+            {error}
+          </p>
+        )}
+        {busy && (
+          <p className="status" role="status">
+            Checking your order…
+          </p>
+        )}
         {miss ? (
           <p className="alert" role="status">
             No order with that number.
@@ -774,7 +914,8 @@ function Contact({ profile }: { profile: Profile }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const name = String(form.get("name") ?? "").trim();
     const phone = String(form.get("phone") ?? "").trim();
     const note = String(form.get("note") ?? "").trim();
@@ -786,13 +927,16 @@ function Contact({ profile }: { profile: Profile }) {
     setBusy(true);
     setError("");
     try {
-      const receipt = await post<{ reference: string }>("/api/v1/site/enquiries", {
-        name,
-        phone,
-        note,
-      });
+      const receipt = await post<{ reference: string }>(
+        "/api/v1/site/enquiries",
+        {
+          name,
+          phone,
+          note,
+        },
+      );
       setSaved(receipt.reference);
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (caught) {
       setError(message(caught));
     } finally {
@@ -809,22 +953,42 @@ function Contact({ profile }: { profile: Profile }) {
           <p className="status" style={{ marginTop: 16, maxWidth: 460 }}>
             {profile.contactBody}
           </p>
-          <p style={{ marginTop: 24, fontFamily: "Syne, sans-serif", fontSize: 28, fontWeight: 650 }}>
+          <p
+            style={{
+              marginTop: 24,
+              fontFamily: "Syne, sans-serif",
+              fontSize: 28,
+              fontWeight: 650,
+            }}
+          >
             {profile.contactTagline}
           </p>
         </div>
         <form className="panel" onSubmit={submit}>
           <label className="field">
             Name
-            <input name="name" />
+            <input
+              name="name"
+              autoComplete="name"
+              required
+              minLength={2}
+              maxLength={160}
+            />
           </label>
           <label className="field">
             Phone
-            <input name="phone" inputMode="tel" />
+            <input
+              name="phone"
+              type="tel"
+              autoComplete="tel"
+              required
+              pattern="[+0-9 ()\-]{7,20}"
+              maxLength={20}
+            />
           </label>
           <label className="field">
             Note for the yard
-            <textarea name="note" />
+            <textarea name="note" maxLength={1000} />
           </label>
           {error ? (
             <p className="alert" role="alert">
@@ -886,12 +1050,14 @@ export function CustomerSignup() {
             <p className="kicker">CUSTOMER</p>
             <h1>Create your login.</h1>
             <p className="status">
-              An administrator or operations user approves the login before it can be used. After
-              that, you see only your own orders, trips, and bills.
+              An administrator or operations user approves the login before it
+              can be used. After that, you see only your own orders, trips, and
+              bills.
             </p>
             <p className="status">
-              Suppliers and drivers use the <Link to="/join">request form</Link>. After approval,
-              everyone signs in with <Link to="/staff">Login</Link>.
+              Suppliers and drivers use the <Link to="/join">request form</Link>
+              . After approval, everyone signs in with{" "}
+              <Link to="/staff">Login</Link>.
             </p>
             <p>
               <Link className="text-link" to="/">
@@ -904,7 +1070,8 @@ export function CustomerSignup() {
               <p className="kicker">REQUEST RECEIVED</p>
               <h2>Your login is waiting for approval.</h2>
               <p className="status">
-                You can sign in after an administrator or operations user approves this request.
+                You can sign in after an administrator or operations user
+                approves this request.
               </p>
               <Link className="btn" to="/staff">
                 Login
@@ -922,7 +1089,12 @@ export function CustomerSignup() {
               </label>
               <label className="field">
                 Username
-                <input name="username" autoComplete="username" required maxLength={80} />
+                <input
+                  name="username"
+                  autoComplete="username"
+                  required
+                  maxLength={80}
+                />
               </label>
               <label className="field">
                 Password

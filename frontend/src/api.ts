@@ -15,7 +15,8 @@ async function refreshCsrf() {
   csrf = response.ok ? await response.json() : undefined;
 }
 function detail(body: { detail?: unknown } | null, status: number) {
-  if (typeof body?.detail === "string" && body.detail.trim()) return body.detail;
+  if (typeof body?.detail === "string" && body.detail.trim())
+    return body.detail;
   if (status === 401) return "Please sign in to continue.";
   if (status === 403)
     return "This action is not permitted, or your security token has expired. Refresh and try again.";
@@ -39,7 +40,10 @@ export async function request<T = any>(
     const body = await response.json().catch(() => null);
     if (response.status === 401)
       window.dispatchEvent(new Event("session-expired"));
-    if (response.status === 403) await refreshCsrf();
+    if (response.status === 403)
+      await refreshCsrf().catch(() => {
+        csrf = undefined;
+      });
     throw new ApiError(response.status, detail(body, response.status));
   }
   return response.status === 204 ? (undefined as T) : response.json();
@@ -60,7 +64,8 @@ export const put = <T = any>(path: string, body?: unknown) =>
   write<T>("PUT", path, body);
 export const patch = <T = any>(path: string, body?: unknown) =>
   write<T>("PATCH", path, body);
-export const del = <T = any>(path: string) => request<T>(path, { method: "DELETE" });
+export const del = <T = any>(path: string) =>
+  request<T>(path, { method: "DELETE" });
 export async function upload<T = any>(path: string, body: FormData) {
   return request<T>(path, { method: "POST", body });
 }
@@ -79,7 +84,9 @@ export async function binary(path: string) {
 }
 export async function login(username: string, password: string) {
   await token();
-  const headers = new Headers({ "Content-Type": "application/x-www-form-urlencoded" });
+  const headers = new Headers({
+    "Content-Type": "application/x-www-form-urlencoded",
+  });
   headers.set(csrf!.headerName, csrf!.token);
   const response = await fetch("/login", {
     method: "POST",

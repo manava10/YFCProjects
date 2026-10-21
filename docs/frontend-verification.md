@@ -19,3 +19,11 @@ The fixture server and temporary sample records are not part of the application 
 - Through the frontend proxy, all 23 read-only API checks succeeded (HTTP 200), including identity, customer/material/branch/supplier directories, enquiries, orders, yards, purchases, reservations, adjustments, fleet, fuel/expenses, accounting lists and users.
 - Most business directories contain zero records. Customer form rendering works; no business records were created or updated. Complete sales-to-delivery writes, approvals and role-specific acceptance remain unverified against this database.
 - Production frontend build and all six API utility tests passed.
+
+## Frontend refinement review
+
+Preserved the current public-site design and existing user changes. Fixed contact and site-editor forms reading React's `event.currentTarget` after an awaited request; these now capture the form before the request. Added explicit success feedback to shared internal forms, preserved password whitespace, and kept original permission errors visible if CSRF refresh fails.
+
+Public tracking now has a loading state, distinguishes 404 from service failures, discards late responses from previous searches, clears stale results on edits and remembers successful lookups during the visit. Public contact and quote inputs match backend length/quantity limits. Added a main landmark, a keyboard skip link, Escape dismissal for the mobile menu and reduced-motion support. Document upload state resets by target record and validates type, non-empty content and the 2 MiB limit before uploading.
+
+Validation: production build passes; 10 frontend tests pass, including new credential-preservation, decimal-precision, timestamp and failed-CSRF-refresh checks. Browser verification against the running backend confirmed a missing public reference is displayed correctly, contact/quantity constraints are present, and the mobile menu closes with Escape. At a 390px viewport, document width remained 390px. No business submissions were made; successful contact/site-editor writes and file uploads were not exercised against the live database in this review.

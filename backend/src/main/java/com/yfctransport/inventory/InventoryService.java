@@ -610,6 +610,22 @@ class InventoryService implements TripSupply {
 
   @Override
   @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+  public void raiseInTransitLoad(
+      UUID trip, BigDecimal newLoaded, UUID movementId, String reference) {
+    var c = supply(trip);
+    if (!"IN_TRANSIT".equals(c.get("status")))
+      throw conflict("Load can be raised only while the trip is in transit");
+    BigDecimal old = number(c, "quantity");
+    if (newLoaded.compareTo(old) <= 0) return;
+    UUID reservation = uuid(c, "reservation_id");
+    if (reservation != null)
+      issueInternal(
+          reservation, new InventoryDtos.IssueInput(movementId, newLoaded.subtract(old), reference), null);
+    db.update("update trip_supply_claims set quantity=? where trip_id=?", newLoaded, trip);
+  }
+
+  @Override
+  @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
   public void deliver(
       UUID trip,
       BigDecimal loaded,
@@ -695,6 +711,12 @@ class InventoryService implements TripSupply {
     var p = one("purchase_orders", uuid(c, "purchase_id"), true);
     if (!Set.of("OPEN", "RECEIVED").contains((String) p.get("status")))
       throw conflict("Direct purchase is closed and cannot change receipt weights");
+    if (db.queryForObject(
+            "select count(*) from billing_source_claims where kind='PURCHASE_RECEIPT' and source_id=?",
+            Integer.class,
+            trip)
+        > 0)
+      throw conflict("Cancel the billing preparation before changing this receipt");
     BigDecimal nextReceived =
         number(p, "received_quantity").subtract(number(receipt, "received_quantity")).add(received);
     if (nextReceived.compareTo(number(p, "quantity")) > 0)

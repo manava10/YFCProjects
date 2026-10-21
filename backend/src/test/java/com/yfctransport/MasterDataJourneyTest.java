@@ -122,7 +122,7 @@ class MasterDataJourneyTest {
         + site
         + "\",\"materialId\":\""
         + material
-        + "\",\"orderedQuantity\":100,\"unitRate\":1200}";
+        + "\",\"orderedQuantity\":100,\"materialRate\":1200,\"transportRate\":0}";
   }
 
   void setActive(String path, boolean active) throws Exception {

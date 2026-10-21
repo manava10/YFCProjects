@@ -136,8 +136,10 @@ class InventoryJourneyTest {
                 "MATERIAL_AND_TRANSPORT",
                 "orderedQuantity",
                 new BigDecimal("100"),
-                "unitRate",
-                new BigDecimal("1200")));
+                "materialRate",
+                new BigDecimal("1200"),
+                "transportRate",
+                BigDecimal.ZERO));
     return new Fixture(
         s, yard, supplier, plant, id(order), order.read("$.items[0].id", String.class));
   }

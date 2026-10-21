@@ -378,8 +378,14 @@ export function Enquiry() {
                         deliveryTerms: form.get("deliveryTerms"),
                         items: row.items.map((item: RecordData) => ({
                           rfqItemId: item.id,
-                          materialRate: form.get(`material-${item.id}`) || "0",
-                          transportRate: form.get(`transport-${item.id}`) || "0",
+                          materialRate:
+                            row.businessType === "TRANSPORT"
+                              ? "0"
+                              : String(form.get(`material-${item.id}`) ?? ""),
+                          transportRate:
+                            row.businessType === "MATERIAL"
+                              ? "0"
+                              : String(form.get(`transport-${item.id}`) ?? ""),
                         })),
                       },
                     });
@@ -401,7 +407,6 @@ export function Enquiry() {
                           min="0"
                           max="9999999999.99"
                           step="0.01"
-                          defaultValue="0"
                           required
                           disabled={row.businessType === "TRANSPORT"}
                         />
@@ -413,7 +418,6 @@ export function Enquiry() {
                           min="0"
                           max="9999999999.99"
                           step="0.01"
-                          defaultValue="0"
                           required
                           disabled={row.businessType === "MATERIAL"}
                         />
@@ -579,6 +583,7 @@ export function Enquiry() {
 export function Orders() {
   const write = useAccess().write;
   const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState("MATERIAL_AND_TRANSPORT");
   const { page, setPage, q, items, total, hasNext } = usePaged("orders", "/api/v1/orders");
   return (
     <>
@@ -607,7 +612,12 @@ export function Orders() {
               </select>
             </Field>
             <Field label="Business type">
-              <select name="businessType" required>
+              <select
+                name="businessType"
+                required
+                value={kind}
+                onChange={(event) => setKind(event.target.value)}
+              >
                 <option value="MATERIAL_AND_TRANSPORT">Material & transport</option>
                 <option value="MATERIAL">Material only</option>
                 <option value="TRANSPORT">Transport only</option>
@@ -622,9 +632,20 @@ export function Orders() {
             <Field label="Ordered tonnes">
               <input name="orderedQuantity" type="number" min="0.001" step="0.001" required />
             </Field>
-            <Field label="Combined rate ₹ / tonne">
-              <input name="unitRate" type="number" min="0" step="0.01" required />
-            </Field>
+            {kind === "TRANSPORT" ? (
+              <input type="hidden" name="materialRate" value="0" />
+            ) : (
+              <Field label="Material rate ₹ / tonne">
+                <input name="materialRate" type="number" min="0" step="0.01" required />
+              </Field>
+            )}
+            {kind === "MATERIAL" ? (
+              <input type="hidden" name="transportRate" value="0" />
+            ) : (
+              <Field label="Transport rate ₹ / tonne">
+                <input name="transportRate" type="number" min="0" step="0.01" required />
+              </Field>
+            )}
             <Field label="Branch (optional)">
               <select name="branchId">
                 <Choices path="/api/v1/branches" empty="No saved branch" />

@@ -961,7 +961,18 @@ class OperatingService {
             fuel,
             r.tripId())
         > 0) throw conflict("This trip already has an allocation from the fuel receipt");
-    BigDecimal allocated = amount(r.quantityLitres(), decimal(entry, "actual_price_per_litre"));
+    BigDecimal alreadyAmount =
+        db.queryForObject(
+            "select coalesce(sum(amount),0) from fuel_allocations where fuel_id=? and status in"
+                + " ('PENDING','APPROVED')",
+            BigDecimal.class,
+            fuel);
+    BigDecimal allocated =
+        used.add(r.quantityLitres()).compareTo(decimal(entry, "quantity_litres")) == 0
+            ? decimal(entry, "amount").subtract(alreadyAmount)
+            : amount(r.quantityLitres(), decimal(entry, "actual_price_per_litre"));
+    if (allocated.signum() <= 0)
+      throw new IllegalArgumentException("Fuel allocation amount must round to at least INR 0.01");
     db.update(
         "insert into"
             + " fuel_allocations(id,fuel_id,trip_id,quantity_litres,amount,reason,evidence_reference,submitted_by,create_payload)"

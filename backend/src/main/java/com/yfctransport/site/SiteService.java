@@ -2,6 +2,7 @@ package com.yfctransport.site;
 
 import com.yfctransport.audit.AuditTrail;
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -223,7 +224,8 @@ class SiteService {
             (rs, n) -> rs.getBigDecimal("rate"),
             input.plantId(),
             input.destinationId());
-    if (freight.isEmpty()) conflict("No freight is published for that plant and drop.");
+    if (freight.isEmpty() || freight.get(0).signum() <= 0)
+      conflict("Freight is not published for that plant and drop.");
     UUID id = UUID.randomUUID();
     String reference = nextReference();
     String mediator = input.mediator() == null ? "" : input.mediator().trim();
@@ -244,10 +246,14 @@ class SiteService {
         materialRate,
         money(freight.get(0)));
     audit.record("PUBLIC_QUOTE", "PublicQuote", id, reference);
-    return track(reference);
+    return track(reference, true);
   }
 
   SiteDtos.PublicQuote track(String reference) {
+    return track(reference, false);
+  }
+
+  private SiteDtos.PublicQuote track(String reference, boolean includeMediator) {
     String key = reference == null ? "" : reference.trim().toUpperCase(Locale.ROOT);
     List<SiteDtos.PublicQuote> rows =
         db.query(
@@ -268,7 +274,7 @@ class SiteService {
                     rs.getBigDecimal("quantity"),
                     rs.getString("plant_name"),
                     rs.getString("destination"),
-                    rs.getString("mediator"),
+                    includeMediator ? rs.getString("mediator") : "",
                     rs.getBigDecimal("material_rate"),
                     rs.getBigDecimal("freight_rate"),
                     rs.getString("stage"),
@@ -279,6 +285,16 @@ class SiteService {
   }
 
   SiteDtos.StaffQuote advance(UUID id, SiteDtos.Stage stage) {
+    List<String> rows =
+        db.query(
+            "select stage from public_quotes where id=?",
+            (rs, n) -> rs.getString("stage"),
+            id);
+    if (rows.isEmpty()) missing("order");
+    List<String> order = List.of("CONFIRMED", "LOADING", "ON_THE_WAY", "DELIVERED");
+    int from = order.indexOf(rows.get(0));
+    int to = order.indexOf(stage.name());
+    if (to != from + 1) conflict("Move the ticket one stage forward.");
     int updated = db.update("update public_quotes set stage=? where id=?", stage.name(), id);
     if (updated != 1) missing("order");
     audit.record("SITE_QUOTE_STAGE", "PublicQuote", id, stage.name());
@@ -392,6 +408,7 @@ class SiteService {
             select f.plant_id, f.destination_id, f.rate from public_freight f
             join public_plants p on p.id=f.plant_id and p.active
             join public_destinations d on d.id=f.destination_id and d.active
+            where f.rate > 0
             """;
     return db.query(
         sql,
@@ -511,11 +528,16 @@ class SiteService {
     db.queryForObject("select id from site_guard where id=1 for update", Integer.class);
   }
 
+  private static final SecureRandom TICKETS = new SecureRandom();
+
   private String nextReference() {
     db.update("update site_counters set last_number=last_number+1 where name='ticket'");
     Integer number =
         db.queryForObject("select last_number from site_counters where name='ticket'", Integer.class);
-    return "YFC-" + number;
+    byte[] raw = new byte[4];
+    TICKETS.nextBytes(raw);
+    String token = java.util.HexFormat.of().withUpperCase().formatHex(raw);
+    return "YFC-" + number + "-" + token;
   }
 
   private static BigDecimal money(BigDecimal value) {

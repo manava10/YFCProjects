@@ -17,8 +17,8 @@ class CustomerOpeningService implements CustomerOpening {
 
   @Override
   @Transactional
-  public UUID open(String name, String mobile, String gstin) {
-    Customer c = customers.save(new Customer(name.strip(), mobile.strip(), gstin));
+  public UUID open(String name, String mobile, String gstin, String address) {
+    Customer c = customers.save(new Customer(name.strip(), mobile.strip(), gstin, address));
     audit.record("CUSTOMER_CREATED", "CUSTOMER", c.id, "Opened from an approved account application");
     return c.id;
   }

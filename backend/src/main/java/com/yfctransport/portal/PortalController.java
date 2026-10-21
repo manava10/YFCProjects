@@ -50,12 +50,13 @@ class PortalController {
     if (role.equals("CUSTOMER")) {
       result.put(
           "profile",
-          rows("select id,name,mobile,gstin from customers where id=?", record).getFirst());
+          rows("select id,name,mobile,gstin,address from customers where id=?", record).getFirst());
       result.put(
           "orders",
           rows(
-              "select id,material,business_type,ordered_quantity,created_at from sales_orders where"
-                  + " customer_id=? order by created_at desc,id limit 50",
+              "select i.id,i.material,o.business_type,i.ordered_quantity,o.created_at from"
+                  + " sales_order_items i join sales_orders o on o.id=i.order_id where"
+                  + " o.customer_id=? order by o.created_at desc,i.position,i.id limit 50",
               record));
       result.put(
           "trips",
@@ -110,7 +111,8 @@ class PortalController {
     return rows(
         "select p.id,p.kind,p.prepared_on,p.subtotal,p.status,t.invoice_number,t.payable_total from"
             + " billing_preparations p left join billing_tax_assessments t on"
-            + " t.preparation_id=p.id where p.party_id=? and p.kind=? order by p.prepared_on desc,p.id"
+            + " t.preparation_id=p.id where p.party_id=? and p.kind=? and p.status='READY' order by"
+            + " p.prepared_on desc,p.id"
             + " limit 50",
         party,
         kind);

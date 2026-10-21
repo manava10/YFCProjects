@@ -16,7 +16,7 @@ import {
   Activity,
 } from "lucide-react";
 import { request, type Page, type RecordData } from "./api";
-import { short, val, label } from "./lib";
+import { short, val, label, isPendingReview } from "./lib";
 import { ErrorBox, Status, type Access } from "./ui";
 
 type Results = Page<RecordData> | RecordData[];
@@ -67,16 +67,14 @@ export function Overview({ access }: { access: Access }) {
     (r) =>
       !["DELIVERED", "CANCELLED"].includes(String(val(r, "status", "state"))),
   );
-  const pending = rows(expenses.data).filter(
-    (r) => val(r, "status") === "PENDING",
-  );
+  const pending = rows(expenses.data).filter(isPendingReview);
   const queries = [
     orders,
     enquiries,
     trips,
     ...(access.write ? [compliance] : []),
     ...(access.finance ? [expenses] : []),
-    ...(access.admin || access.operations ? [requests] : []),
+    ...(access.admin || access.operations ? [requests, publicDesk] : []),
   ];
   const loading = queries.some((q) => q.isFetching);
   const stats = [

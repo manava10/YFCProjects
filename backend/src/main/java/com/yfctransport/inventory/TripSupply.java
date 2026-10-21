@@ -9,6 +9,9 @@ public interface TripSupply {
 
   void dispatch(UUID trip, BigDecimal loaded, String reference);
 
+  /** Raises the in-transit load before delivery when the destination scale is higher. */
+  void raiseInTransitLoad(UUID trip, BigDecimal newLoaded, UUID movementId, String reference);
+
   void deliver(
       UUID trip,
       BigDecimal loaded,

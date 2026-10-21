@@ -69,3 +69,14 @@ test('conflict responses retain the server explanation', async () => {
   const {api}=await setup([{status:409,body:{detail:'Record changed concurrently. Reload it before retrying.'}}]);
   await assert.rejects(api.request('/api/v1/orders'),error=>error.status===409&&error.message.includes('Reload'));
 });
+
+test('a failed CSRF refresh does not hide the original permission error', async () => {
+  const {api}=await setup([
+    {body:{headerName:'X-CSRF-TOKEN',token:'old'}},
+    {status:403,body:{detail:'Independent reviewer required'}},
+  ]);
+  const mockFetch=globalThis.fetch;
+  let calls=0;
+  globalThis.fetch=(...args)=>++calls===3 ? Promise.reject(new TypeError('Network unavailable')) : mockFetch(...args);
+  await assert.rejects(api.post('/api/v1/review',{}),error=>error.status===403&&error.message==='Independent reviewer required');
+});

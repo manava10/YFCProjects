@@ -1532,8 +1532,29 @@ tr:hover td {
   }
 }
 @media (max-width: 700px) {
-  .nav-scroll { margin-top: 14px; padding-bottom: 6px; gap: 5px; }
-  .nav-scroll > div, .nav-scroll nav { display: contents; }
-  .nav-scroll .nav-label { display: none; }
-  .nav-scroll a { flex-shrink: 0; white-space: nowrap; }
+  .nav-scroll {
+    margin-top: 14px;
+    padding-bottom: 6px;
+    gap: 5px;
+  }
+  .nav-scroll > div,
+  .nav-scroll nav {
+    display: contents;
+  }
+  .nav-scroll .nav-label {
+    display: none;
+  }
+  .nav-scroll a {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+.save-confirmation {
+  padding: 12px 15px;
+  border: 1px solid #cbdcc1;
+  border-radius: 6px;
+  background: #eef5e9;
+  color: #365d30;
+  font-size: 12px;
 }

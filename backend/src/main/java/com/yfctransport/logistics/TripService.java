@@ -343,27 +343,42 @@ class TripService {
     if (received.signum() <= 0 || r.acceptedQuantity().compareTo(received) > 0)
       throw new IllegalArgumentException(
           "Received net must be positive and accepted cannot exceed received");
-    if (received.compareTo(number(t, "loaded_quantity")) > 0)
-      throw conflict(
-          "Received weight exceeds recorded load; resolve the weighbridge discrepancy first");
-    if ((received.compareTo(number(t, "loaded_quantity")) != 0
-            || r.acceptedQuantity().compareTo(received) != 0)
+    BigDecimal loaded = number(t, "loaded_quantity");
+    BigDecimal loadedTare = number(t, "loaded_tare");
+    BigDecimal loadedGross = number(t, "loaded_gross");
+    if ((received.compareTo(loaded) != 0 || r.acceptedQuantity().compareTo(received) != 0)
         && clean(r.discrepancyReason()) == null)
       throw new IllegalArgumentException("Weight differences require a reason");
+    if (received.compareTo(loaded) > 0) {
+      if (received.compareTo(number(t, "planned_quantity")) > 0)
+        throw conflict("Received weight exceeds planned quantity");
+      var line = orders.lockLine(uuid(t, "order_item_id"));
+      var vehicle = fleet.requireTruck(uuid(t, "truck_id"), line.branchId(), today());
+      if (received.compareTo(vehicle.capacity()) > 0)
+        throw conflict("Received weight exceeds truck capacity");
+      if (!"TRANSPORT".equals(t.get("source")))
+        supply.raiseInTransitLoad(
+            id, received, r.eventId(), "Destination weighbridge above plant load");
+      loaded = received;
+      loadedGross = loadedTare == null ? received : received.add(loadedTare);
+    }
     if (!t.get("source").equals("TRANSPORT"))
       supply.deliver(
           id,
-          number(t, "loaded_quantity"),
+          loaded,
           received,
           r.acceptedQuantity(),
           today(),
           r.slipReference().strip(),
           clean(r.discrepancyReason()));
-    orders.recordTripDelivery(id, received);
+    orders.correctTripWeights(id, loaded, received);
     db.update(
         "update trips set"
-            + " received_gross=?,received_tare=?,received_quantity=?,accepted_quantity=?,delivery_slip=?,receiver_name=?,proof_reference=?,discrepancy_reason=?,status='DELIVERED',delivered_at=current_timestamp"
+            + " loaded_gross=?,loaded_tare=?,loaded_quantity=?,received_gross=?,received_tare=?,received_quantity=?,accepted_quantity=?,delivery_slip=?,receiver_name=?,proof_reference=?,discrepancy_reason=?,status='DELIVERED',delivered_at=current_timestamp"
             + " where id=?",
+        loadedGross,
+        loadedTare,
+        loaded,
         r.gross(),
         r.tare(),
         received,

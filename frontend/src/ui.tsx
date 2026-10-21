@@ -1,10 +1,26 @@
-import React, { createContext, useContext, useState, type FormEvent } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Eye, EyeOff, Layers3, Plus } from "lucide-react";
 import { collect, post, request, type Page, type RecordData } from "./api";
-import { groups, label, nameOf, ownedBy, readForm, scalars, short, text, uuid, val } from "./lib";
+import {
+  groups,
+  label,
+  nameOf,
+  ownedBy,
+  readForm,
+  scalars,
+  short,
+  text,
+  uuid,
+  val,
+} from "./lib";
 
 export type Access = {
   username: string;
@@ -43,8 +59,16 @@ export function ErrorBox({ error }: { error: unknown }) {
 
 export function Status({ value }: { value?: string | boolean | null }) {
   const textValue =
-    typeof value === "boolean" ? (value ? "ACTIVE" : "INACTIVE") : String(value ?? "");
-  return <span className={`status ${textValue.toLowerCase()}`}>{label(textValue)}</span>;
+    typeof value === "boolean"
+      ? value
+        ? "ACTIVE"
+        : "INACTIVE"
+      : String(value ?? "");
+  return (
+    <span className={`status ${textValue.toLowerCase()}`}>
+      {label(textValue)}
+    </span>
+  );
 }
 
 const FieldFeedback = createContext<HTMLDivElement | null>(null);
@@ -140,7 +164,13 @@ export function Heading({
   );
 }
 
-export function Notice({ title, children }: { title: string; children: React.ReactNode }) {
+export function Notice({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="notice">
       <strong>{title}</strong>
@@ -149,7 +179,13 @@ export function Notice({ title, children }: { title: string; children: React.Rea
   );
 }
 
-export function Back({ to, children }: { to: string; children: React.ReactNode }) {
+export function Back({
+  to,
+  children,
+}: {
+  to: string;
+  children: React.ReactNode;
+}) {
   return (
     <Link className="back" to={to}>
       <ArrowLeft size={16} />
@@ -199,11 +235,19 @@ export function Pager({
   return (
     <div className="pager">
       <span>{total ?? "—"} records</span>
-      <button className="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>
+      <button
+        className="secondary"
+        disabled={page === 0}
+        onClick={() => setPage(page - 1)}
+      >
         Previous
       </button>
       <span>Page {page + 1}</span>
-      <button className="secondary" disabled={!hasNext} onClick={() => setPage(page + 1)}>
+      <button
+        className="secondary"
+        disabled={!hasNext}
+        onClick={() => setPage(page + 1)}
+      >
         Next
       </button>
     </div>
@@ -214,7 +258,8 @@ export function usePaged(key: string, path: string) {
   const [page, setPage] = useState(0);
   const q = useQuery({
     queryKey: [key, path, page],
-    queryFn: () => request<Page<RecordData> | RecordData[]>(withPage(path, page)),
+    queryFn: () =>
+      request<Page<RecordData> | RecordData[]>(withPage(path, page)),
   });
   const items = Array.isArray(q.data) ? q.data : (q.data?.content ?? []);
   const total = Array.isArray(q.data) ? undefined : q.data?.totalElements;
@@ -233,11 +278,13 @@ export function Choices({
   empty,
   labelOf,
   filter,
+  getValue,
 }: {
   path: string;
   empty: string;
   labelOf?: (row: RecordData) => string;
   filter?: (row: RecordData) => boolean;
+  getValue?: (row: RecordData) => string;
 }) {
   const q = useQuery({
     queryKey: ["directory", path],
@@ -247,18 +294,33 @@ export function Choices({
   const rows = filter ? q.data?.filter(filter) : q.data;
   return (
     <>
-      <option value="">{q.isPending ? "Loading…" : q.isError ? "Unable to load options" : empty}</option>
-      {q.isError && feedback && createPortal(
-        <div>
-          <ErrorBox error={q.error} />
-          <button type="button" className="secondary" disabled={q.isFetching}
-            onClick={() => { void q.refetch(); }}>
-            {q.isFetching ? "Retrying…" : "Retry loading options"}
-          </button>
-        </div>, feedback,
-      )}
+      <option value="">
+        {q.isPending
+          ? "Loading…"
+          : q.isError
+            ? "Unable to load options"
+            : empty}
+      </option>
+      {q.isError &&
+        feedback &&
+        createPortal(
+          <div>
+            <ErrorBox error={q.error} />
+            <button
+              type="button"
+              className="secondary"
+              disabled={q.isFetching}
+              onClick={() => {
+                void q.refetch();
+              }}
+            >
+              {q.isFetching ? "Retrying…" : "Retry loading options"}
+            </button>
+          </div>,
+          feedback,
+        )}
       {rows?.map((row) => (
-        <option key={String(val(row, "id"))} value={String(val(row, "id"))}>
+        <option key={getValue ? getValue(row) : String(val(row, "id"))} value={getValue ? getValue(row) : String(val(row, "id"))}>
           {labelOf ? labelOf(row) : nameOf(row)}
         </option>
       ))}
@@ -430,7 +492,9 @@ export function ReviewBox({
   const [mode, setMode] = useState<"approve" | "reject" | null>(null);
   if (!access.review) return null;
   if (ownedBy(row, access.username)) {
-    return <p className="muted">A different user has to review this request.</p>;
+    return (
+      <p className="muted">A different user has to review this request.</p>
+    );
   }
   return (
     <div>
@@ -438,14 +502,20 @@ export function ReviewBox({
         <button type="button" onClick={() => setMode("approve")}>
           Approve
         </button>
-        <button type="button" className="secondary" onClick={() => setMode("reject")}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => setMode("reject")}
+        >
           Reject
         </button>
       </div>
       {mode && (
         <ReasonForm
           path={mode === "approve" ? approve : reject}
-          submitLabel={mode === "approve" ? "Confirm approval" : "Confirm rejection"}
+          submitLabel={
+            mode === "approve" ? "Confirm approval" : "Confirm rejection"
+          }
           onDone={() => setMode(null)}
         />
       )}
@@ -463,7 +533,12 @@ type SaveFormProps = {
 };
 
 export function SaveForm(props: SaveFormProps) {
-  return <RecordSaveForm key={`${props.method ?? "POST"}:${props.path}`} {...props} />;
+  return (
+    <RecordSaveForm
+      key={`${props.method ?? "POST"}:${props.path}`}
+      {...props}
+    />
+  );
 }
 
 function RecordSaveForm({
@@ -495,9 +570,21 @@ function RecordSaveForm({
     mutation.mutate(prepare ? prepare(body) : body);
   }
   return (
-    <form key={key} className="panel form-panel" onSubmit={submit}>
+    <form
+      key={key}
+      className="panel form-panel"
+      onSubmit={submit}
+      onChange={() => {
+        if (mutation.isSuccess) mutation.reset();
+      }}
+    >
       {title && <h3>{title}</h3>}
       <ErrorBox error={mutation.error} />
+      {mutation.isSuccess && (
+        <p className="save-confirmation" role="status">
+          Saved successfully.
+        </p>
+      )}
       {children}
       <button disabled={mutation.isPending}>
         {mutation.isPending ? "Saving…" : "Save"}
@@ -527,7 +614,13 @@ export function ToggleForm({
   );
 }
 
-export function CodeName({ code = "", name = "" }: { code?: string; name?: string }) {
+export function CodeName({
+  code = "",
+  name = "",
+}: {
+  code?: string;
+  name?: string;
+}) {
   return (
     <div className="form-grid">
       <Field label="Code">
@@ -547,7 +640,13 @@ export function CodeName({ code = "", name = "" }: { code?: string; name?: strin
   );
 }
 
-export function ActiveSelect({ name = "active", caption = "Active" }: { name?: string; caption?: string }) {
+export function ActiveSelect({
+  name = "active",
+  caption = "Active",
+}: {
+  name?: string;
+  caption?: string;
+}) {
   return (
     <Field label={caption}>
       <select name={name} defaultValue="true">

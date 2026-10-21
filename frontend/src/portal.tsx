@@ -340,10 +340,11 @@ function Table({
   );
 }
 
-export function ExternalHome() {
+export function ExternalHome({ username }: { username: string }) {
+  const [logoutError, setLogoutError] = useState<unknown>(null);
   const client = useQueryClient();
   const q = useQuery({
-    queryKey: ["portal"],
+    queryKey: ["portal", username],
     queryFn: () => request<RecordData>("/api/v1/portal"),
   });
   const role = String(val(q.data, "role") ?? "");
@@ -364,8 +365,14 @@ export function ExternalHome() {
             className="icon-button"
             aria-label="Sign out"
             onClick={async () => {
-              await logout();
-              client.setQueryData(["session"], null);
+              setLogoutError(null);
+              try {
+                await logout();
+                client.removeQueries({ predicate: (query) => query.queryKey[0] !== "session" });
+                client.setQueryData(["session"], null);
+              } catch (error) {
+                setLogoutError(error);
+              }
             }}
           >
             <LogOut size={18} />
@@ -382,7 +389,8 @@ export function ExternalHome() {
             title="Only your own records."
             description="Orders, trips and bills shown here belong to this login."
           />
-          <ErrorBox error={q.error} />
+          <ErrorBox error={logoutError || q.error} />
+          {q.isPending && <p role="status">Loading your records…</p>}
           {profile && (
             <section className="panel">
               <h2>Your details</h2>

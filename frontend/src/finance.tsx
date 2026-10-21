@@ -459,7 +459,8 @@ export function Parties() {
   const admin = useAccess().admin;
   const [type, setType] = useState("CUSTOMER");
   const list = usePaged("parties", "/api/v1/accounting/parties");
-  const balances = usePaged("balances", "/api/v1/accounting/party-balances");
+  const [balanceDate, setBalanceDate] = useState(today());
+  const balances = usePaged("balances", `/api/v1/accounting/party-balances?asOf=${balanceDate}`);
   const [selected, setSelected] = useState("");
   const one = useQuery({
     queryKey: ["party", selected],
@@ -549,6 +550,13 @@ export function Parties() {
         </div>
       )}
       <h3>Posted balances</h3>
+      <Field label="Balances as of">
+        <input type="date" required value={balanceDate} onChange={(event) => {
+          if (!event.target.value) return;
+          setBalanceDate(event.target.value);
+          balances.setPage(0);
+        }} />
+      </Field>
       <div className="panel">
         <DataTable
           rows={balances.items}
@@ -558,6 +566,7 @@ export function Parties() {
             { label: "Amount", keys: ["balance_amount", "balanceAmount", "signed_balance"] },
           ]}
         />
+        <Pager page={balances.page} setPage={balances.setPage} hasNext={balances.hasNext} />
       </div>
     </>
   );
@@ -649,7 +658,7 @@ export function Money() {
           </Field>
           <Field label="Cash / bank account">
             <select name="moneyAccountId" required>
-              <Choices path="/api/v1/accounting/money-accounts" empty="Select book" labelOf={(row) => `${val(row, "code", "kind")} · ${val(row, "reference", "name")}`} />
+              <Choices path="/api/v1/accounting/money-accounts" getValue={(row) => String(row.account_id)} empty="Select book" labelOf={(row) => `${val(row, "code", "kind")} · ${val(row, "reference", "name")}`} />
             </select>
           </Field>
           <Field label="Period">
@@ -807,7 +816,15 @@ export function Billing() {
   );
 }
 
-function TaxForm({ id, lines }: { id: string; lines: RecordData[] }) {
+function TaxForm({
+  id,
+  lines,
+  correcting,
+}: {
+  id: string;
+  lines: RecordData[];
+  correcting?: boolean;
+}) {
   const client = useQueryClient();
   const [supply, setSupply] = useState("INTRA_STATE");
   const [error, setError] = useState<unknown>(null);
@@ -857,7 +874,13 @@ function TaxForm({ id, lines }: { id: string; lines: RecordData[] }) {
       }}
     >
       <h2>Enter GST on this bill</h2>
-      <Notice title="Type the rate for this bill. No rate is stored in advance.">
+      <Notice
+        title={
+          correcting
+            ? "Correct the GST on this bill before the ledger journal is posted."
+            : "Type the rate for this bill. No rate is stored in advance."
+        }
+      >
         Intra-state tax is split equally into CGST and SGST. Inter-state tax is posted entirely as IGST. One bill covers the whole order. This does not file an e-invoice with the government portal.
       </Notice>
       <ErrorBox error={error} />
@@ -927,12 +950,22 @@ export function Preparation() {
               onDone={() => setMode(null)}
             />
           )}
-          {status === "READY" && String(val(q.data, "tax_treatment")) !== "ASSESSED" && !own && (
-            <TaxForm id={id} lines={(q.data?.lines as RecordData[]) ?? []} />
+          {status === "READY" && Boolean(val(q.data, "gst_editable")) && !own && (
+            <TaxForm
+              id={id}
+              lines={(q.data?.lines as RecordData[]) ?? []}
+              correcting={String(val(q.data, "tax_treatment")) === "ASSESSED"}
+            />
           )}
           {status === "READY" && String(val(q.data, "tax_treatment")) !== "ASSESSED" && own && (
             <p className="muted">A different user enters the GST on this bill.</p>
           )}
+          {status === "READY" &&
+            String(val(q.data, "tax_treatment")) === "ASSESSED" &&
+            Boolean(val(q.data, "gst_editable")) &&
+            own && (
+              <p className="muted">A different user can correct the GST on this bill.</p>
+            )}
           {status === "READY" && String(val(q.data, "tax_treatment")) === "ASSESSED" && (
             <SaveForm title="Draft the ledger journal" path={`/api/v1/accounting/billing-preparations/${id}/journals`}>
               <Notice title="GST entered on this bill is included in the journal.">

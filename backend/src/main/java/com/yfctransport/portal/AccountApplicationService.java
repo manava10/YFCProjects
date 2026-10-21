@@ -272,7 +272,8 @@ class AccountApplicationService {
             customers.open(
                 (String) row.get("display_name"),
                 (String) row.get("mobile"),
-                (String) row.get("gstin"));
+                (String) row.get("gstin"),
+                (String) row.get("address"));
       else
         record =
             suppliers.open(

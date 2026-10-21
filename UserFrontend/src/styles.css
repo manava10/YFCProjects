@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #07090c;
+  --color-navy: #071422;
+  --color-fg: #f4f0e8;
+  --color-muted: #93a0b3;
+  --color-orange: #f26b1d;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--color-ink);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-orange);
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  .route-dash {
+    stroke-dasharray: 7 9;
+    animation: route-march 22s linear infinite;
+  }
+}
+
+@keyframes route-march {
+  to {
+    stroke-dashoffset: -320;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .route-dash {
+    animation: none;
+  }
+}

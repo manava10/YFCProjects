@@ -98,6 +98,8 @@ class BillingPreparationService {
       result.put("journal_status", journalStatus);
     }
     result.put("ledger_posted", "POSTED".equals(journalStatus));
+    boolean blocked = journal != null && journalBlocksCancel(journal);
+    result.put("gst_editable", "READY".equals(result.get("status")) && !blocked);
     var tax =
         db.queryForList(
             "select * from billing_tax_assessments where preparation_id=?", result.get("id"));

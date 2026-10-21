@@ -50,7 +50,9 @@ class OrderController {
       @Size(max = 160) String material,
       @Size(max = 500) String deliverySite,
       @NotNull @DecimalMin("0.001") @Digits(integer = 11, fraction = 3) BigDecimal orderedQuantity,
-      @NotNull @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal unitRate,
+      @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal unitRate,
+      @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal materialRate,
+      @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal transportRate,
       UUID branchId,
       UUID projectId,
       UUID deliverySiteId,
@@ -111,6 +113,21 @@ class OrderController {
     if (!customers.exists(r.customerId()))
       throw new IllegalArgumentException("Customer does not exist");
     var resolved = preparation.prepare(r);
+    BigDecimal materialRate;
+    BigDecimal transportRate;
+    if (r.materialRate() != null || r.transportRate() != null) {
+      materialRate = r.materialRate() == null ? BigDecimal.ZERO : r.materialRate();
+      transportRate = r.transportRate() == null ? BigDecimal.ZERO : r.transportRate();
+    } else if (r.unitRate() != null && r.businessType() != BusinessType.MATERIAL_AND_TRANSPORT) {
+      materialRate = r.businessType() == BusinessType.TRANSPORT ? BigDecimal.ZERO : r.unitRate();
+      transportRate = r.businessType() == BusinessType.TRANSPORT ? r.unitRate() : BigDecimal.ZERO;
+    } else
+      throw new IllegalArgumentException(
+          "Enter the material rate and the transport rate separately");
+    if (r.businessType() == BusinessType.MATERIAL && transportRate.signum() != 0)
+      throw new IllegalArgumentException("A material-only order cannot include a transport rate");
+    if (r.businessType() == BusinessType.TRANSPORT && materialRate.signum() != 0)
+      throw new IllegalArgumentException("A transport-only order cannot include a material rate");
     SalesOrder created =
         orders.save(
             new SalesOrder(
@@ -119,7 +136,7 @@ class OrderController {
                 resolved.material(),
                 resolved.address(),
                 r.orderedQuantity(),
-                r.unitRate()));
+                materialRate.add(transportRate)));
     created.branchId = resolved.branchId();
     created.projectId = resolved.projectId();
     created.deliverySiteId = resolved.siteId();
@@ -130,9 +147,8 @@ class OrderController {
     line.materialId = created.materialId;
     line.material = created.material;
     line.orderedQuantity = created.orderedQuantity;
-    boolean transport = created.businessType.equals("TRANSPORT");
-    line.materialRate = transport ? BigDecimal.ZERO : created.unitRate;
-    line.transportRate = transport ? created.unitRate : BigDecimal.ZERO;
+    line.materialRate = materialRate;
+    line.transportRate = transportRate;
     line.materialAmount = SalesService.amount(line.orderedQuantity, line.materialRate);
     line.transportAmount = SalesService.amount(line.orderedQuantity, line.transportRate);
     items.save(line);
@@ -177,6 +193,16 @@ class OrderController {
     UUID selected = itemId;
     if (lines.stream().noneMatch(i -> i.id.equals(selected)))
       throw new IllegalArgumentException("Order item does not belong to this order");
+    BigDecimal ordered =
+        lines.stream().filter(i -> i.id.equals(selected)).findFirst().orElseThrow().orderedQuantity;
+    BigDecimal already =
+        dispatches.findByOrderId(id).stream()
+            .filter(d -> d.orderItemId == null || selected.equals(d.orderItemId))
+            .map(d -> d.loadedQuantity)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    if (already.add(r.loadedQuantity()).compareTo(ordered) > 0)
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Loaded quantity exceeds the ordered quantity");
     if (lines.stream()
         .filter(i -> i.id.equals(selected))
         .anyMatch(i -> i.fulfillmentMode.equals("TRIP")))

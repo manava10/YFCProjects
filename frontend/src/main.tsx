@@ -141,7 +141,7 @@ function App() {
     ),
   };
   if (access.customer || access.supplier || access.driver) {
-    return <ExternalHome />;
+    return <ExternalHome username={session.data.username} />;
   }
   if (!access.admin && !access.operations && !access.accounts) {
     return (

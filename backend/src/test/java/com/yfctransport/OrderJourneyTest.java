@@ -55,7 +55,7 @@ class OrderJourneyTest {
                                 + customer
                                 + "\",\"businessType\":\"MATERIAL_AND_TRANSPORT\",\"material\":\"20"
                                 + " MM\",\"deliverySite\":\"Gurgaon Site"
-                                + " A\",\"orderedQuantity\":100,\"unitRate\":1200}"))
+                                + " A\",\"orderedQuantity\":100,\"materialRate\":1000,\"transportRate\":200}"))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
@@ -79,7 +79,9 @@ class OrderJourneyTest {
     mvc.perform(get("/api/v1/orders/" + order))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.loadedQuantity").value(99))
-        .andExpect(jsonPath("$.billableQuantity").value(100));
+        .andExpect(jsonPath("$.billableQuantity").value(100))
+        .andExpect(jsonPath("$.items[0].materialAmount").value(100000))
+        .andExpect(jsonPath("$.items[0].transportAmount").value(20000));
     mvc.perform(get("/api/v1/orders").param("size", "100"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content[?(@.id == '" + order + "')].billableQuantity").value(org.hamcrest.Matchers.contains(100.0)));

@@ -66,7 +66,6 @@ const images = [
   "/media/hero.jpg",
   "/media/truck.jpg",
 ];
-const stages = ["CONFIRMED", "LOADING", "ON_THE_WAY", "DELIVERED"];
 const words: [string, string, boolean][] = [
   ["heroKicker", "Hero label", false],
   ["heroTitle", "Hero title", false],
@@ -98,7 +97,8 @@ export function PublicDesk() {
     void client.invalidateQueries({ queryKey: ["public-site"] });
     void client.invalidateQueries({ queryKey: ["overview", "public-desk"] });
   }
-  if (desk.isPending) return <p className="loading">Opening the customer page…</p>;
+  if (desk.isPending)
+    return <p className="loading">Opening the customer page…</p>;
   if (desk.isError || !desk.data) return <ErrorBox error={desk.error} />;
   const { catalog, enquiries, quotes } = desk.data;
   return (
@@ -109,8 +109,9 @@ export function PublicDesk() {
         description="Words, rates, plants, and the orders people send from the public page."
       />
       <p>
-        The opening figures came with the brochure. Change any number here before you treat it as
-        the company’s record. A quote keeps the rate from the moment it was issued.
+        The opening figures came with the brochure. Change any number here
+        before you treat it as the company’s record. A quote keeps the rate from
+        the moment it was issued.
       </p>
       <Words profile={catalog.profile} onSaved={saved} />
       <Stats rows={catalog.stats} onSaved={saved} />
@@ -154,7 +155,13 @@ export function PublicDesk() {
   );
 }
 
-function Words({ profile, onSaved }: { profile: Profile; onSaved: () => void }) {
+function Words({
+  profile,
+  onSaved,
+}: {
+  profile: Profile;
+  onSaved: () => void;
+}) {
   const [draft, setDraft] = useState(profile);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -184,12 +191,16 @@ function Words({ profile, onSaved }: { profile: Profile; onSaved: () => void }) 
             {long ? (
               <textarea
                 value={draft[key] ?? ""}
-                onChange={(event) => setDraft({ ...draft, [key]: event.target.value })}
+                onChange={(event) =>
+                  setDraft({ ...draft, [key]: event.target.value })
+                }
               />
             ) : (
               <input
                 value={draft[key] ?? ""}
-                onChange={(event) => setDraft({ ...draft, [key]: event.target.value })}
+                onChange={(event) =>
+                  setDraft({ ...draft, [key]: event.target.value })
+                }
               />
             )}
           </Field>
@@ -197,7 +208,9 @@ function Words({ profile, onSaved }: { profile: Profile; onSaved: () => void }) 
         <Field label="About photo">
           <select
             value={draft.aboutImage}
-            onChange={(event) => setDraft({ ...draft, aboutImage: event.target.value })}
+            onChange={(event) =>
+              setDraft({ ...draft, aboutImage: event.target.value })
+            }
           >
             {images.map((image) => (
               <option key={image} value={image}>
@@ -246,10 +259,16 @@ function StatRow({ row, onSaved }: { row: Stat; onSaved: () => void }) {
       }}
     >
       <Field label="Figure">
-        <input value={value} onChange={(event) => setValue(event.target.value)} />
+        <input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        />
       </Field>
       <Field label="Caption">
-        <input value={label} onChange={(event) => setLabel(event.target.value)} />
+        <input
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+        />
       </Field>
       <ErrorBox error={error} />
       <button>Save figure</button>
@@ -257,7 +276,13 @@ function StatRow({ row, onSaved }: { row: Stat; onSaved: () => void }) {
   );
 }
 
-function Materials({ rows, onSaved }: { rows: Material[]; onSaved: () => void }) {
+function Materials({
+  rows,
+  onSaved,
+}: {
+  rows: Material[];
+  onSaved: () => void;
+}) {
   return (
     <section className="panel">
       <h2>Materials and ex-plant rates</h2>
@@ -295,29 +320,46 @@ function MaterialRow({ row, onSaved }: { row: Material; onSaved: () => void }) {
       }}
     >
       <Field label="Name">
-        <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+        <input
+          value={draft.name}
+          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+        />
       </Field>
       <Field label="Grade">
-        <input value={draft.grade} onChange={(event) => setDraft({ ...draft, grade: event.target.value })} />
+        <input
+          value={draft.grade}
+          onChange={(event) =>
+            setDraft({ ...draft, grade: event.target.value })
+          }
+        />
       </Field>
       <Field label="Use">
         <input
           value={draft.useText}
-          onChange={(event) => setDraft({ ...draft, useText: event.target.value })}
+          onChange={(event) =>
+            setDraft({ ...draft, useText: event.target.value })
+          }
         />
       </Field>
       <Field label="Rate per ton">
         <input
           inputMode="decimal"
           value={draft.rate}
-          onChange={(event) => setDraft({ ...draft, rate: Number(event.target.value) })}
+          onChange={(event) =>
+            setDraft({ ...draft, rate: Number(event.target.value) })
+          }
         />
       </Field>
-      <ImageField value={draft.image} onChange={(image) => setDraft({ ...draft, image })} />
+      <ImageField
+        value={draft.image}
+        onChange={(image) => setDraft({ ...draft, image })}
+      />
       <Field label="On the page">
         <select
           value={draft.active ? "yes" : "no"}
-          onChange={(event) => setDraft({ ...draft, active: event.target.value === "yes" })}
+          onChange={(event) =>
+            setDraft({ ...draft, active: event.target.value === "yes" })
+          }
         >
           <option value="yes">Shown</option>
           <option value="no">Hidden</option>
@@ -337,7 +379,8 @@ function AddMaterial({ onSaved }: { onSaved: () => void }) {
       onSubmit={async (event) => {
         event.preventDefault();
         setError(null);
-        const form = new FormData(event.currentTarget);
+        const formElement = event.currentTarget;
+        const form = new FormData(formElement);
         try {
           await post("/api/v1/site/materials", {
             name: form.get("name"),
@@ -346,7 +389,7 @@ function AddMaterial({ onSaved }: { onSaved: () => void }) {
             rate: Number(form.get("rate")),
             image: form.get("image"),
           });
-          event.currentTarget.reset();
+          formElement.reset();
           onSaved();
         } catch (caught) {
           setError(caught);
@@ -410,19 +453,35 @@ function PlantRow({ row, onSaved }: { row: Plant; onSaved: () => void }) {
       }}
     >
       <Field label="Name">
-        <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+        <input
+          value={draft.name}
+          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+        />
       </Field>
       <Field label="Place">
-        <input value={draft.place} onChange={(event) => setDraft({ ...draft, place: event.target.value })} />
+        <input
+          value={draft.place}
+          onChange={(event) =>
+            setDraft({ ...draft, place: event.target.value })
+          }
+        />
       </Field>
       <Field label="Note">
-        <input value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} />
+        <input
+          value={draft.note}
+          onChange={(event) => setDraft({ ...draft, note: event.target.value })}
+        />
       </Field>
-      <ImageField value={draft.image} onChange={(image) => setDraft({ ...draft, image })} />
+      <ImageField
+        value={draft.image}
+        onChange={(image) => setDraft({ ...draft, image })}
+      />
       <Field label="On the page">
         <select
           value={draft.active ? "yes" : "no"}
-          onChange={(event) => setDraft({ ...draft, active: event.target.value === "yes" })}
+          onChange={(event) =>
+            setDraft({ ...draft, active: event.target.value === "yes" })
+          }
         >
           <option value="yes">Shown</option>
           <option value="no">Hidden</option>
@@ -441,7 +500,8 @@ function AddPlant({ onSaved }: { onSaved: () => void }) {
       className="form-grid"
       onSubmit={async (event) => {
         event.preventDefault();
-        const form = new FormData(event.currentTarget);
+        const formElement = event.currentTarget;
+        const form = new FormData(formElement);
         setError(null);
         try {
           await post("/api/v1/site/plants", {
@@ -450,7 +510,7 @@ function AddPlant({ onSaved }: { onSaved: () => void }) {
             note: form.get("note"),
             image: form.get("image"),
           });
-          event.currentTarget.reset();
+          formElement.reset();
           onSaved();
         } catch (caught) {
           setError(caught);
@@ -490,7 +550,8 @@ function Freight({
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const next: Record<string, string> = {};
-    for (const lane of lanes) next[`${lane.plantId}:${lane.destinationId}`] = String(lane.rate);
+    for (const lane of lanes)
+      next[`${lane.plantId}:${lane.destinationId}`] = String(lane.rate);
     setRates(next);
   }, [lanes]);
   return (
@@ -566,11 +627,12 @@ function AddDrop({ onSaved }: { onSaved: () => void }) {
     <form
       onSubmit={async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        const form = new FormData(event.currentTarget);
+        const formElement = event.currentTarget;
+        const form = new FormData(formElement);
         setError(null);
         try {
           await post("/api/v1/site/destinations", { name: form.get("name") });
-          event.currentTarget.reset();
+          formElement.reset();
           onSaved();
         } catch (caught) {
           setError(caught);
@@ -599,10 +661,31 @@ function Quotes({ rows, onSaved }: { rows: Quote[]; onSaved: () => void }) {
   );
 }
 
+const nextStage: Record<string, string> = {
+  CONFIRMED: "LOADING",
+  LOADING: "ON_THE_WAY",
+  ON_THE_WAY: "DELIVERED",
+};
+const stageLabel: Record<string, string> = {
+  LOADING: "Loading",
+  ON_THE_WAY: "On the Way",
+  DELIVERED: "Delivered",
+};
+
 function QuoteRow({ row, onSaved }: { row: Quote; onSaved: () => void }) {
-  const [stage, setStage] = useState(row.stage);
+  const next = nextStage[row.stage];
   const [error, setError] = useState<unknown>(null);
-  useEffect(() => setStage(row.stage), [row.stage]);
+  if (!next) {
+    return (
+      <div>
+        <strong>{row.reference}</strong>
+        <p>
+          {row.materialName} · {row.quantity} ton · {row.plantName} →{" "}
+          {row.destination} · Delivered
+        </p>
+      </div>
+    );
+  }
   return (
     <form
       className="form-grid"
@@ -610,7 +693,9 @@ function QuoteRow({ row, onSaved }: { row: Quote; onSaved: () => void }) {
         event.preventDefault();
         setError(null);
         try {
-          await post(`/api/v1/site/desk/quotes/${row.id}/stage`, { stage });
+          await post(`/api/v1/site/desk/quotes/${row.id}/stage`, {
+            stage: next,
+          });
           onSaved();
         } catch (caught) {
           setError(caught);
@@ -620,21 +705,13 @@ function QuoteRow({ row, onSaved }: { row: Quote; onSaved: () => void }) {
       <div>
         <strong>{row.reference}</strong>
         <p>
-          {row.materialName} · {row.quantity} ton · {row.plantName} → {row.destination}
+          {row.materialName} · {row.quantity} ton · {row.plantName} →{" "}
+          {row.destination}
         </p>
         <p>Mediator / Reference: {row.mediator || "—"}</p>
       </div>
-      <Field label="Stage">
-        <select value={stage} onChange={(event) => setStage(event.target.value)}>
-          {stages.map((item) => (
-            <option key={item} value={item}>
-              {item === "ON_THE_WAY" ? "On the Way" : item[0] + item.slice(1).toLowerCase()}
-            </option>
-          ))}
-        </select>
-      </Field>
       <ErrorBox error={error} />
-      <button>Update stage</button>
+      <button>Mark {stageLabel[next]}</button>
     </form>
   );
 }
@@ -654,7 +731,9 @@ function ImageField({
         name={name}
         value={name ? undefined : value}
         defaultValue={name ? images[0] : undefined}
-        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+        onChange={
+          onChange ? (event) => onChange(event.target.value) : undefined
+        }
       >
         {images.map((image) => (
           <option key={image} value={image}>
