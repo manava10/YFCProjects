@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { request, type RecordData } from "./api";
-import { short, today, val } from "./lib";
+import { short, today, val, yardLabel } from "./lib";
 import { Documents } from "./documents";
 import {
   ActiveSelect,
@@ -561,14 +561,17 @@ export function Trip() {
           {write && status === "DELIVERED" && (
             <SaveForm title="Customer return into a yard" path={`/api/v1/trips/${id}/returns`}>
               <Notice title="Returns wait for accounts approval.">
-                Only accepted delivered material can be returned. Resalable approval increases yard
-                stock. It does not change the billable order quantity.
+                The yard must belong to the order’s branch. Resalable material must go to an
+                operating yard; approval increases that yard’s on-hand. Material that is not
+                resalable, received at an operating yard, only uses return capacity. The same
+                material received at a quarantine yard increases that yard’s on-hand so the held
+                quantity stays visible. This does not change the billable order quantity.
               </Notice>
               <IdField name="returnId" caption="Return id" />
               <div className="form-grid">
                 <Field label="Receiving yard">
                   <select name="yardId" required>
-                    <Choices path="/api/v1/yards" empty="Select yard" />
+                    <Choices path="/api/v1/yards" empty="Select yard" labelOf={yardLabel} />
                   </select>
                 </Field>
                 <Field label="Quantity">

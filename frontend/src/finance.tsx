@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { request, type RecordData } from "./api";
-import { money, ownedBy, short, today, val } from "./lib";
+import { post, request, type RecordData } from "./api";
+import { money, ownedBy, short, today, uuid, val } from "./lib";
 import {
   Choices,
   DataTable,
@@ -735,8 +735,8 @@ export function Billing() {
     <>
       <Heading
         eyebrow="FINANCE / BILLING PREPARATION"
-        title="Check the commercial basis before tax."
-        description="Ready means the quantities and rates were reviewed. It does not issue a GST invoice."
+        title="Prepare one bill for the whole order."
+        description="Sales bills use the ordered quantity. Supplier bills use the loaded quantity. The accountant enters GST on the bill itself."
       />
       <SaveForm title="Prepare a bill" path="/api/v1/accounting/billing-preparations">
         <IdField name="preparationId" caption="Preparation id" />
@@ -754,17 +754,15 @@ export function Billing() {
             <input name="preparedOn" type="date" max={today()} required />
           </Field>
           <Field label="Quantity basis">
-            <select key={kind} name="quantityBasis" defaultValue={kind === "SALES_ORDER" ? "ORDERED" : "ACCEPTED"}>
-              {kind === "SALES_ORDER" ? (
-                <option value="ORDERED">Ordered</option>
-              ) : (
-                <>
-                  <option value="LOADED">Loaded</option>
-                  <option value="RECEIVED">Received</option>
-                  <option value="ACCEPTED">Accepted</option>
-                </>
-              )}
-            </select>
+            {kind === "SALES_ORDER" ? (
+              <select name="quantityBasis" defaultValue="ORDERED">
+                <option value="ORDERED">Ordered — whole order</option>
+              </select>
+            ) : (
+              <select name="quantityBasis" defaultValue="LOADED">
+                <option value="LOADED">Loaded</option>
+              </select>
+            )}
           </Field>
           <Field label="Reference">
             <input name="reference" required maxLength={300} />
@@ -806,6 +804,81 @@ export function Billing() {
         <Pager page={list.page} setPage={list.setPage} hasNext={list.hasNext} />
       </div>
     </>
+  );
+}
+
+function TaxForm({ id, lines }: { id: string; lines: RecordData[] }) {
+  const client = useQueryClient();
+  const [supply, setSupply] = useState("INTRA_STATE");
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const taxable = lines.flatMap((line) => {
+    const position = Number(line.position);
+    const parts: { position: number; component: string; label: string }[] = [];
+    if (Number(line.material_amount) > 0)
+      parts.push({
+        position,
+        component: "MATERIAL",
+        label: `${line.material} · material`,
+      });
+    if (Number(line.transport_amount) > 0)
+      parts.push({
+        position,
+        component: "TRANSPORT",
+        label: `${line.material} · freight`,
+      });
+    return parts;
+  });
+  return (
+    <form
+      className="stack"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setBusy(true);
+        setError(null);
+        const form = new FormData(event.currentTarget);
+        try {
+          await post(`/api/v1/accounting/billing-preparations/${id}/tax`, {
+            eventId: uuid(),
+            supply,
+            lines: taxable.map((part) => ({
+              position: part.position,
+              component: part.component,
+              hsnOrSac: String(form.get(`hsn-${part.component}-${part.position}`)),
+              ratePercent: String(form.get(`rate-${part.component}-${part.position}`)),
+            })),
+          });
+          await client.invalidateQueries();
+        } catch (caught) {
+          setError(caught);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <h2>Enter GST on this bill</h2>
+      <Notice title="Type the rate for this bill. No rate is stored in advance.">
+        Intra-state tax is split equally into CGST and SGST. Inter-state tax is posted entirely as IGST. One bill covers the whole order. This does not file an e-invoice with the government portal.
+      </Notice>
+      <ErrorBox error={error} />
+      <Field label="Place of supply">
+        <select value={supply} onChange={(event) => setSupply(event.target.value)}>
+          <option value="INTRA_STATE">Within the state · CGST and SGST</option>
+          <option value="INTER_STATE">Another state · IGST</option>
+        </select>
+      </Field>
+      {taxable.map((part) => (
+        <div className="form-grid" key={`${part.component}-${part.position}`}>
+          <Field label={`${part.label} · HSN or SAC`}>
+            <input name={`hsn-${part.component}-${part.position}`} required pattern="[0-9]{4,8}" />
+          </Field>
+          <Field label="GST %">
+            <input name={`rate-${part.component}-${part.position}`} required inputMode="decimal" />
+          </Field>
+        </div>
+      ))}
+      <button disabled={busy || taxable.length === 0}>{busy ? "Saving…" : "Save GST on this bill"}</button>
+    </form>
   );
 }
 
@@ -854,10 +927,16 @@ export function Preparation() {
               onDone={() => setMode(null)}
             />
           )}
-          {status === "READY" && (
-            <SaveForm title="Draft a before-tax journal" path={`/api/v1/accounting/billing-preparations/${id}/journals`}>
-              <Notice title="Sales credit an income account. Purchases debit an expense account.">
-                The journal still needs a different user to post it. Tax is not calculated.
+          {status === "READY" && String(val(q.data, "tax_treatment")) !== "ASSESSED" && !own && (
+            <TaxForm id={id} lines={(q.data?.lines as RecordData[]) ?? []} />
+          )}
+          {status === "READY" && String(val(q.data, "tax_treatment")) !== "ASSESSED" && own && (
+            <p className="muted">A different user enters the GST on this bill.</p>
+          )}
+          {status === "READY" && String(val(q.data, "tax_treatment")) === "ASSESSED" && (
+            <SaveForm title="Draft the ledger journal" path={`/api/v1/accounting/billing-preparations/${id}/journals`}>
+              <Notice title="GST entered on this bill is included in the journal.">
+                This records the tax invoice in the ledger. It does not file an e-invoice with the government portal. A different user still posts the draft.
               </Notice>
               <IdField name="journalId" caption="Journal id" />
               <div className="form-grid">
@@ -866,11 +945,32 @@ export function Preparation() {
                     <Choices path="/api/v1/accounting/periods" empty="Select period" labelOf={(row) => String(row.code)} />
                   </select>
                 </Field>
-                <Field label="Counter account">
+                <Field label="Income or expense account">
                   <select name="counterAccountId" required>
                     <Choices path="/api/v1/accounting/accounts" empty="Select account" labelOf={(row) => `${row.code} · ${row.type}`} />
                   </select>
                 </Field>
+                {Number(val(q.data, "cgst_amount") ?? 0) > 0 && (
+                  <>
+                    <Field label="CGST account">
+                      <select name="cgstAccountId" required>
+                        <Choices path="/api/v1/accounting/accounts" empty="Select CGST" labelOf={(row) => `${row.code} · ${row.type}`} />
+                      </select>
+                    </Field>
+                    <Field label="SGST account">
+                      <select name="sgstAccountId" required>
+                        <Choices path="/api/v1/accounting/accounts" empty="Select SGST" labelOf={(row) => `${row.code} · ${row.type}`} />
+                      </select>
+                    </Field>
+                  </>
+                )}
+                {Number(val(q.data, "igst_amount") ?? 0) > 0 && (
+                  <Field label="IGST account">
+                    <select name="igstAccountId" required>
+                      <Choices path="/api/v1/accounting/accounts" empty="Select IGST" labelOf={(row) => `${row.code} · ${row.type}`} />
+                    </select>
+                  </Field>
+                )}
                 <Field label="Entry date">
                   <input name="entryDate" type="date" max={today()} required />
                 </Field>

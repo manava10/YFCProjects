@@ -40,7 +40,7 @@ Session login and CSRF protection are enabled. GET `/api/v1/csrf` anonymously an
 
 Every authenticated request rechecks the persisted account's enabled state and credential/access version. Disabling a user, changing their role or completing password reset invalidates their existing sessions on the next request. Password/role changes do not cancel work already running in another request.
 
-Customer, supplier and driver accounts can authenticate, but their business endpoints remain closed until record ownership is implemented. No cross-origin policy is enabled; use same-origin frontend routing later.
+Customer, supplier and driver accounts can sign in only after an administrator or operations user approves their request. They then see only their own records. See [external accounts](../docs/external-accounts.md). No cross-origin policy is enabled; use same-origin frontend routing.
 
 All JSON write endpoints require authentication, permission and CSRF token. API prefixes are `/api/v1`.
 

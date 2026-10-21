@@ -293,7 +293,7 @@ class CorrectionJourneyTest {
                 "preparedOn",
                 h.helpers.today().toString(),
                 "quantityBasis",
-                "ACCEPTED",
+                "LOADED",
                 "reference",
                 uid(),
                 "evidenceReference",

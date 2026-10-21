@@ -1,0 +1,779 @@
+.company-home {
+  background: #f8f7f1;
+  color: #243a2d;
+  font-family: "DM Sans", sans-serif;
+}
+.company-home * {
+  box-sizing: border-box;
+}
+.company-home a {
+  transition: opacity 0.2s;
+}
+.company-home a:hover {
+  opacity: 0.8;
+}
+.company-topline {
+  background: #18382e;
+  color: #bbcbb2;
+  padding: 10px max(5vw, 24px);
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  display: flex;
+  justify-content: space-between;
+}
+.company-topline a {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 9px;
+  letter-spacing: 0.2px;
+  color: #e2ead4;
+}
+.company-nav {
+  height: 99px;
+  padding: 0 5vw;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8f7f1;
+  border: 0;
+}
+.company-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #213e30;
+  font-family: Manrope, sans-serif;
+  font-size: 34px;
+  letter-spacing: -1.5px;
+  font-weight: 800;
+}
+.company-monogram {
+  background: #c6d890;
+  border-radius: 7px;
+  color: #1b3928;
+  width: 43px;
+  height: 45px;
+  display: grid;
+  place-items: center;
+  font-size: 33px;
+  font-style: italic;
+}
+.company-logo small {
+  font-size: 7px;
+  letter-spacing: 1.7px;
+  margin-top: 3px;
+  color: #658060;
+}
+.company-links {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  margin: 0;
+}
+.company-links a {
+  font-size: 11px;
+  color: #42543e;
+  padding: 0;
+  background: none;
+  white-space: nowrap;
+}
+.company-links .company-nav-cta {
+  background: #203f30;
+  color: #edf1dc;
+  padding: 13px 17px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-left: 15px;
+}
+.company-menu {
+  display: none;
+}
+.company-main {
+  max-width: none;
+  padding: 0;
+  margin: 0;
+}
+.company-hero {
+  min-height: 650px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #323d2c;
+  color: #fff;
+  overflow: hidden;
+}
+.company-hero-image {
+  position: absolute;
+  inset: 0;
+  background-image: url("/images/yfc-transport-construction.png");
+  background-size: cover;
+  background-position: center 58%;
+  transform: scale(1.01);
+}
+.company-hero-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(15, 32, 23, 0.86),
+      rgba(20, 35, 23, 0.62) 37%,
+      rgba(20, 35, 23, 0.08) 75%
+    ),
+    linear-gradient(0deg, rgba(13, 25, 18, 0.65), transparent 27%);
+}
+.company-hero-content {
+  position: relative;
+  padding: 65px 7vw 100px;
+  max-width: 820px;
+}
+.company-eyebrow {
+  font-size: 9px;
+  letter-spacing: 1.9px;
+  font-weight: 600;
+  color: #6e8257;
+  margin: 0 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.company-hero .company-eyebrow {
+  color: #d1dea9;
+  font-size: 8px;
+}
+.company-eyebrow > span {
+  width: 5px;
+  height: 5px;
+  background: #c8dc8e;
+  border-radius: 50%;
+}
+.company-hero h1 {
+  font-family: Manrope, sans-serif;
+  font-size: clamp(43px, 4.7vw, 74px);
+  letter-spacing: -2.7px;
+  font-weight: 500;
+  line-height: 1.14;
+  color: #fff;
+  margin: 0 0 26px;
+}
+.company-hero h1 em {
+  font-style: normal;
+  color: #d0df9a;
+}
+.company-hero-description {
+  max-width: 410px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: #d2dac8;
+  margin-bottom: 35px;
+}
+.company-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+}
+.company-button {
+  background: #d1e09e;
+  color: #253a25;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 16px 21px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.company-text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 13px;
+  font-size: 11px;
+  color: #e7edda;
+}
+.company-hero-bottom {
+  position: absolute;
+  bottom: 25px;
+  left: 5vw;
+  right: 5vw;
+  border-top: 1px solid #d3dfc333;
+  padding-top: 19px;
+  display: flex;
+  justify-content: space-between;
+  color: #d2d8c4;
+  font-size: 7px;
+  letter-spacing: 1.8px;
+}
+.company-hero-bottom > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.company-hero-bottom i {
+  display: block;
+  width: 43px;
+  height: 2px;
+  background: #c9da95;
+}
+.company-capabilities {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: #edf0e3;
+  padding: 30px 7vw;
+  border-bottom: 1px solid #dfe5d5;
+  gap: 30px;
+}
+.company-capabilities > div {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  border-right: 1px solid #d1dac4;
+}
+.company-capabilities > div:last-child {
+  border: 0;
+}
+.company-capabilities svg {
+  color: #69834d;
+}
+.company-capabilities strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.company-capabilities small {
+  color: #819073;
+  font-size: 9px;
+  margin-top: 6px;
+}
+.company-container {
+  max-width: 1280px;
+  margin: auto;
+  padding-left: 7vw;
+  padding-right: 7vw;
+}
+.company-about {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 75px;
+  padding-top: 100px;
+  padding-bottom: 100px;
+  scroll-margin-top: 25px;
+}
+.company-home h2 {
+  font-size: clamp(25px, 2.7vw, 39px);
+  line-height: 1.35;
+  letter-spacing: -1.3px;
+  font-weight: 500;
+  margin: 0;
+}
+.company-about h2 span {
+  color: #849474;
+}
+.company-about-copy p {
+  font-size: 12px;
+  line-height: 1.95;
+  color: #78846d;
+  margin: 0 0 16px;
+}
+.company-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 30px;
+  font-size: 11px;
+  color: #425f32;
+  border-bottom: 1px solid #b8c6a5;
+  padding-bottom: 10px;
+  margin-top: 10px;
+}
+.company-services {
+  background: #efefe6;
+  border-top: 1px solid #e2e5d7;
+  border-bottom: 1px solid #e2e5d7;
+  padding-top: 80px;
+  padding-bottom: 85px;
+  scroll-margin-top: 20px;
+}
+.company-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 25px;
+  margin-bottom: 39px;
+}
+.company-section-heading > p {
+  font-size: 11px;
+  color: #879077;
+  line-height: 1.9;
+}
+.company-service-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.company-service {
+  background: #f8f8f1;
+  padding: 29px 25px 25px;
+  border: 1px solid #dfe4d2;
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+}
+.company-service-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #6e8955;
+  margin-bottom: 35px;
+}
+.company-service-top > span {
+  font-size: 10px;
+  color: #9daa8a;
+}
+.company-service h3 {
+  font-size: 19px;
+  letter-spacing: -0.5px;
+  font-weight: 500;
+  margin: 0 0 15px;
+}
+.company-service > p {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #7f8a73;
+  margin: 0 0 28px;
+}
+.company-service > small {
+  margin-top: auto;
+  border-top: 1px solid #e1e7d5;
+  padding-top: 17px;
+  font-size: 7px;
+  letter-spacing: 0.9px;
+  color: #899b73;
+  line-height: 1.8;
+}
+.company-approach {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 100px;
+  padding-top: 100px;
+  padding-bottom: 95px;
+  scroll-margin-top: 25px;
+}
+.company-approach-intro > p:not(.company-eyebrow) {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #859176;
+  max-width: 310px;
+  margin-top: 22px;
+}
+.company-plan-mark {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border-top: 1px solid #dce3cf;
+  padding-top: 23px;
+  margin-top: 28px;
+  max-width: 300px;
+  color: #78935c;
+}
+.company-plan-mark span {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #899779;
+}
+.company-process > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 23px;
+  padding: 22px 0;
+  border-bottom: 1px solid #dde4d1;
+}
+.company-process > div:first-child {
+  padding-top: 0;
+}
+.company-process > div > span {
+  font-size: 11px;
+  color: #9aac84;
+  padding-top: 5px;
+}
+.company-process > div > div {
+  flex: 1;
+}
+.company-process h3 {
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0 0 8px;
+  letter-spacing: -0.3px;
+}
+.company-process p {
+  font-size: 10px;
+  color: #899578;
+  line-height: 1.8;
+  margin: 0;
+}
+.company-process > div > svg {
+  color: #9eb08b;
+  margin-top: 4px;
+}
+.company-closing {
+  padding-bottom: 80px;
+}
+.company-closing-card {
+  display: flex;
+  gap: 26px;
+  align-items: center;
+  background: #213f30;
+  border-radius: 7px;
+  padding: 40px;
+  color: #e8eedb;
+}
+.company-closing-card > svg {
+  color: #b8cf86;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 8px;
+}
+.company-closing-card > div {
+  flex: 1;
+}
+.company-closing-card .company-eyebrow {
+  color: #adbe89;
+  font-size: 8px;
+  margin-bottom: 15px;
+}
+.company-closing-card h2 {
+  font-size: 30px;
+}
+.company-closing-card p:last-child {
+  font-size: 11px;
+  color: #acc09f;
+  margin: 17px 0 0;
+}
+.company-footer {
+  display: block;
+  margin: 0;
+  padding: 0;
+  background: #142b21;
+  border: 0;
+  color: #a4b59a;
+}
+.company-footer-top {
+  display: flex;
+  align-items: center;
+  gap: 60px;
+  padding-top: 47px;
+  padding-bottom: 42px;
+}
+.company-footer .company-logo {
+  color: #f0f4e4;
+  font-size: 30px;
+}
+.company-footer .company-logo small {
+  color: #a4b895;
+  font-size: 6px;
+}
+.company-footer-top > p {
+  font-size: 11px;
+  color: #a0b295;
+  line-height: 1.8;
+  flex: 1;
+}
+.company-footer-top > div {
+  display: flex;
+  gap: 26px;
+}
+.company-footer-top > div > a {
+  font-size: 10px;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.company-footer-bottom {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #78936a33;
+  padding-top: 20px;
+  padding-bottom: 24px;
+  font-size: 8px;
+  color: #7f9571;
+}
+.company-home a:focus-visible,
+.company-home button:focus-visible {
+  outline: 3px solid #c5a763;
+  outline-offset: 5px;
+}
+@media (min-width: 1500px) {
+  .company-container {
+    padding-left: 55px;
+    padding-right: 55px;
+  }
+  .company-hero {
+    min-height: 740px;
+  }
+}
+@media (max-width: 1000px) {
+  .company-hero {
+    min-height: 570px;
+  }
+  .company-about,
+  .company-approach {
+    gap: 40px;
+  }
+  .company-links {
+    gap: 20px;
+  }
+  .company-service {
+    padding: 22px 18px;
+  }
+  .company-closing-card {
+    padding: 30px;
+    gap: 20px;
+  }
+  .company-closing-card .company-button {
+    gap: 15px;
+  }
+  .company-nav {
+    height: 85px;
+  }
+  .company-capabilities {
+    gap: 15px;
+    padding: 26px 5vw;
+  }
+  .company-capabilities > div {
+    gap: 10px;
+  }
+  .company-capabilities strong {
+    font-size: 10px;
+  }
+  .company-capabilities small {
+    font-size: 8px;
+  }
+  .company-footer-top {
+    gap: 30px;
+  }
+}
+@media (max-width: 700px) {
+  .company-topline {
+    padding: 9px 20px;
+    font-size: 6px;
+    letter-spacing: 0.5px;
+  }
+  .company-topline > a {
+    font-size: 8px;
+  }
+  .company-nav {
+    height: 80px;
+    padding: 0 22px;
+    position: relative;
+    z-index: 3;
+  }
+  .company-logo {
+    font-size: 29px;
+  }
+  .company-monogram {
+    width: 36px;
+    height: 38px;
+    font-size: 28px;
+  }
+  .company-logo small {
+    font-size: 6px;
+  }
+  .company-menu {
+    display: flex;
+    background: transparent;
+    color: #2c4b30;
+    padding: 8px;
+    min-height: 36px;
+  }
+  .company-links {
+    display: none;
+    position: absolute;
+    top: 80px;
+    left: 0;
+    right: 0;
+    background: #f8f7f1;
+    padding: 20px 24px;
+    box-shadow: 0 15px 20px #1b382322;
+  }
+  .company-links.open {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 22px;
+  }
+  .company-links .company-nav-cta {
+    margin: 0;
+    justify-content: space-between;
+  }
+  .company-hero {
+    min-height: 620px;
+    align-items: flex-start;
+  }
+  .company-hero-image {
+    background-position: 65% center;
+  }
+  .company-hero-shade {
+    background:
+      linear-gradient(90deg, #102518df, #14271999),
+      linear-gradient(0deg, #14271988, transparent);
+  }
+  .company-hero-content {
+    padding: 72px 24px 105px;
+  }
+  .company-hero h1 {
+    font-size: 43px;
+    letter-spacing: -1.8px;
+    line-height: 1.2;
+  }
+  .company-hero .company-eyebrow {
+    font-size: 6px;
+    letter-spacing: 1.1px;
+    gap: 7px;
+  }
+  .company-hero-description {
+    font-size: 12px;
+    max-width: 330px;
+    margin-bottom: 28px;
+  }
+  .company-hero-actions {
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .company-button {
+    font-size: 10px;
+    padding: 15px 18px;
+    gap: 25px;
+  }
+  .company-text-link {
+    font-size: 10px;
+  }
+  .company-hero-bottom {
+    left: 24px;
+    right: 24px;
+    bottom: 25px;
+    font-size: 6px;
+    letter-spacing: 1px;
+    gap: 15px;
+  }
+  .company-hero-bottom > span:last-child {
+    display: none;
+  }
+  .company-capabilities {
+    grid-template-columns: 1fr;
+    padding: 10px 24px;
+    gap: 0;
+  }
+  .company-capabilities > div {
+    padding: 21px 0;
+    border: 0;
+    border-bottom: 1px solid #d5dec9;
+    gap: 17px;
+  }
+  .company-capabilities strong {
+    font-size: 12px;
+  }
+  .company-capabilities small {
+    font-size: 9px;
+  }
+  .company-container {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .company-about,
+  .company-approach {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    padding-top: 60px;
+    padding-bottom: 60px;
+  }
+  .company-home h2 {
+    font-size: 29px;
+    letter-spacing: -1px;
+  }
+  .company-eyebrow {
+    font-size: 8px;
+    letter-spacing: 1.4px;
+    margin-bottom: 20px;
+  }
+  .company-about-copy p {
+    font-size: 12px;
+  }
+  .company-services {
+    padding-top: 55px;
+    padding-bottom: 55px;
+  }
+  .company-section-heading {
+    display: block;
+    margin-bottom: 26px;
+  }
+  .company-section-heading > p {
+    margin-top: 20px;
+  }
+  .company-service-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .company-service {
+    padding: 27px;
+  }
+  .company-service-top {
+    margin-bottom: 22px;
+  }
+  .company-service h3 {
+    font-size: 21px;
+  }
+  .company-service > p {
+    font-size: 12px;
+  }
+  .company-approach {
+    gap: 35px;
+  }
+  .company-process h3 {
+    font-size: 16px;
+  }
+  .company-process p {
+    font-size: 11px;
+  }
+  .company-closing {
+    padding-bottom: 50px;
+  }
+  .company-closing-card {
+    padding: 28px 24px;
+    flex-wrap: wrap;
+    gap: 18px;
+  }
+  .company-closing-card > div {
+    flex-basis: 80%;
+  }
+  .company-closing-card > svg {
+    display: none;
+  }
+  .company-closing-card h2 {
+    font-size: 29px;
+  }
+  .company-closing-card .company-button {
+    margin-top: 6px;
+  }
+  .company-footer-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+    padding-top: 35px;
+    padding-bottom: 35px;
+  }
+  .company-footer-top > p {
+    margin: 0;
+  }
+  .company-footer-top > div {
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .company-footer-bottom {
+    gap: 20px;
+    font-size: 7px;
+  }
+  .company-home nav a {
+    font-size: 11px;
+  }
+}

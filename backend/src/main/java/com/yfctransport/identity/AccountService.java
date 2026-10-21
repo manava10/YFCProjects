@@ -16,7 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
-class AccountService {
+class AccountService implements ExternalAccounts {
   private final AccountRepository accounts;
   private final PasswordResetRepository resets;
   private final IdentityGuardRepository guard;
@@ -36,12 +36,59 @@ class AccountService {
     this.audit = audit;
   }
 
-  void validatePassword(String password) {
+  @Override
+  public void lock() {
+    guard.acquire();
+  }
+
+  @Override
+  public boolean usernameTaken(String username) {
+    return accounts.findByUsername(username.toLowerCase(Locale.ROOT)).isPresent();
+  }
+
+  @Override
+  public void validatePassword(String password) {
     if (password == null
         || password.length() < 12
         || password.getBytes(StandardCharsets.UTF_8).length > 72)
       throw new IllegalArgumentException(
           "Password must have at least 12 characters and at most 72 UTF-8 bytes");
+  }
+
+  @Override
+  public String encode(String password) {
+    validatePassword(password);
+    return encoder.encode(password);
+  }
+
+  @Override
+  public boolean passwordMatches(String raw, String hash) {
+    return encoder.matches(raw, hash);
+  }
+
+  @Override
+  public UUID openHashed(String username, String displayName, String passwordHash, String role) {
+    guard.acquire();
+    String name = username.toLowerCase(Locale.ROOT);
+    if (!name.matches("[a-z0-9][a-z0-9._-]{2,79}"))
+      throw new IllegalArgumentException("Invalid username");
+    Role assigned = Role.valueOf(role);
+    if (assigned != Role.CUSTOMER && assigned != Role.SUPPLIER && assigned != Role.DRIVER)
+      throw new IllegalArgumentException("Only a customer, supplier or driver can be opened here");
+    if (accounts.findByUsername(name).isPresent())
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Username is already in use");
+    Account a = accounts.saveAndFlush(new Account(name, displayName.strip(), passwordHash, assigned));
+    audit.record("USER_CREATED", "USER", a.id, "Approved " + assigned + " application");
+    return a.id;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public UUID idOf(String username) {
+    return accounts
+        .findByUsername(username.toLowerCase(Locale.ROOT))
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"))
+        .id;
   }
 
   Account create(String username, String name, String password, Role role) {

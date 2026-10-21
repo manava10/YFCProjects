@@ -2,6 +2,7 @@ package com.yfctransport.identity;
 
 import com.yfctransport.audit.AuditTrail;
 import org.springframework.context.annotation.*;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -26,6 +27,15 @@ class SecurityConfiguration {
     return http.authorizeHttpRequests(
             a ->
                 a.dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR)
+                    .permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/v1/account-applications")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/site")
+                    .permitAll()
+                    .requestMatchers(
+                        HttpMethod.POST, "/api/v1/site/enquiries", "/api/v1/site/quotes")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/site/quotes/*")
                     .permitAll()
                     .requestMatchers(
                         "/actuator/health",

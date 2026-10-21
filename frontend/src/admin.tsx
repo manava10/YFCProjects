@@ -6,6 +6,7 @@ import {
   ErrorBox,
   Field,
   Heading,
+  PasswordInput,
   Notice,
   Pager,
   SaveForm,
@@ -49,7 +50,7 @@ export function People() {
             <input name="displayName" required maxLength={120} />
           </Field>
           <Field label="Temporary password">
-            <input name="password" type="password" required minLength={12} maxLength={72} autoComplete="new-password" />
+            <PasswordInput name="password" autoComplete="new-password" minLength={12} maxLength={72} />
           </Field>
           <Field label="Role">
             <select name="role">
@@ -176,7 +177,7 @@ export function ResetPassword() {
             <input name="token" required maxLength={100} />
           </Field>
           <Field label="New password">
-            <input name="newPassword" type="password" required minLength={12} maxLength={72} autoComplete="new-password" />
+            <PasswordInput name="newPassword" autoComplete="new-password" minLength={12} maxLength={72} />
           </Field>
           <button disabled={busy}>{busy ? "Saving…" : "Update password"}</button>
         </form>

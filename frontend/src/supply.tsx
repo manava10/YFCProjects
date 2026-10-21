@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { collect, request, type RecordData } from "./api";
-import { money, short, today, val } from "./lib";
+import { Documents } from "./documents";
+import { money, operatingYard, short, today, val, yardLabel } from "./lib";
 import {
   ActiveSelect,
   Choices,
@@ -47,7 +48,7 @@ export function Yards() {
       <Heading
         eyebrow="SUPPLY / YARDS"
         title="Where material waits."
-        description="Yards belong to a branch. Inactive yards keep history and block new receipts."
+        description="An operating yard can be purchased into. A quarantine yard holds material that is not for resale. Kind cannot be changed later."
         action={
           write && (
             <button onClick={() => setCreate((value) => !value)}>
@@ -65,6 +66,12 @@ export function Yards() {
             </select>
           </Field>
           <CodeName />
+          <Field label="Kind">
+            <select name="kind" defaultValue="OPERATING">
+              <option value="OPERATING">Operating</option>
+              <option value="QUARANTINE">Quarantine</option>
+            </select>
+          </Field>
           <Field label="Address">
             <textarea name="address" required maxLength={500} />
           </Field>
@@ -77,6 +84,7 @@ export function Yards() {
           columns={[
             { label: "Yard", keys: ["name"] },
             { label: "Code", keys: ["code"] },
+            { label: "Kind", keys: ["kind"], status: true },
             { label: "Address", keys: ["address"] },
             { label: "Status", keys: ["active"], status: true },
           ]}
@@ -132,7 +140,7 @@ function StockLookup({ yardId }: { yardId?: string }) {
         {!yardId && (
           <Field label="Yard">
             <select value={yard} onChange={(event) => setYard(event.target.value)}>
-              <Choices path="/api/v1/yards" empty="Select yard" />
+              <Choices path="/api/v1/yards" empty="Select yard" labelOf={yardLabel} />
             </select>
           </Field>
         )}
@@ -253,7 +261,12 @@ function PurchaseForm() {
         {destination === "YARD" ? (
           <Field label="Yard">
             <select name="yardId" required>
-              <Choices path="/api/v1/yards" empty="Select yard" />
+              <Choices
+                path="/api/v1/yards"
+                empty="Select operating yard"
+                filter={operatingYard}
+                labelOf={yardLabel}
+              />
             </select>
           </Field>
         ) : (
@@ -432,7 +445,12 @@ export function Reservations() {
           <div className="form-grid">
             <Field label="Yard">
               <select name="yardId" required>
-                <Choices path="/api/v1/yards" empty="Select yard" />
+                <Choices
+                  path="/api/v1/yards"
+                  empty="Select operating yard"
+                  filter={operatingYard}
+                  labelOf={yardLabel}
+                />
               </select>
             </Field>
             <Field label="Order line">
@@ -543,7 +561,7 @@ export function StockControl() {
                   </Field>
                   <Field label="Yard">
                     <select name="yardId" required>
-                      <Choices path="/api/v1/yards" empty="Select yard" />
+                      <Choices path="/api/v1/yards" empty="Select yard" labelOf={yardLabel} />
                     </select>
                   </Field>
                   <Field label="Material">
@@ -594,7 +612,7 @@ export function StockControl() {
                 <div className="form-grid">
                   <Field label="Yard">
                     <select name="yardId" required>
-                      <Choices path="/api/v1/yards" empty="Select yard" />
+                      <Choices path="/api/v1/yards" empty="Select yard" labelOf={yardLabel} />
                     </select>
                   </Field>
                   <Field label="Material">
@@ -629,17 +647,21 @@ export function StockControl() {
           ]}
           form={
             write && (
-              <SaveForm title="Same-branch transfer" path="/api/v1/stock-transfers">
+              <SaveForm title="Transfer quantity" path="/api/v1/stock-transfers">
+                <Notice title="This moves quantity only.">
+                  Operating yards may transfer across branches. A transfer that uses a quarantine
+                  yard must stay in the same branch. No journal is posted.
+                </Notice>
                 <IdField name="transferId" caption="Transfer id" />
                 <div className="form-grid">
                   <Field label="From yard">
                     <select name="fromYardId" required>
-                      <Choices path="/api/v1/yards" empty="Select yard" />
+                      <Choices path="/api/v1/yards" empty="Select yard" labelOf={yardLabel} />
                     </select>
                   </Field>
                   <Field label="To yard">
                     <select name="toYardId" required>
-                      <Choices path="/api/v1/yards" empty="Select yard" />
+                      <Choices path="/api/v1/yards" empty="Select yard" labelOf={yardLabel} />
                     </select>
                   </Field>
                   <Field label="Material">
@@ -714,9 +736,21 @@ function Evidence() {
       <Field label="Evidence reference">
         <input name="evidenceReference" required maxLength={500} />
       </Field>
+      <p className="muted">
+        Uploading a file does not fill this field. If you uploaded one first, you can type
+        document: and its id.
+      </p>
     </>
   );
 }
+
+const DOCUMENTS: Partial<
+  Record<string, "STOCK_ADJUSTMENT" | "STOCK_TRANSFER" | "STOCK_OPENING">
+> = {
+  adjustments: "STOCK_ADJUSTMENT",
+  openings: "STOCK_OPENING",
+  transfers: "STOCK_TRANSFER",
+};
 
 function Queue({
   listKey,
@@ -763,6 +797,9 @@ function Queue({
               <IdField name="reversalId" caption="Reversal id" />
               <Evidence />
             </SaveForm>
+          )}
+          {selected && DOCUMENTS[listKey] && (
+            <Documents targetType={DOCUMENTS[listKey]} targetId={selected} />
           )}
         </div>
       )}

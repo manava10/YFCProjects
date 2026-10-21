@@ -56,7 +56,7 @@ export function groups(row: RecordData) {
 
 const BOOLEANS = new Set(["active", "resalable", "expectedActive", "enabled"]);
 const INTEGERS = new Set(["revision", "version", "paymentTermsDays"]);
-const INSTANTS = new Set(["filledAt", "occurredAt"]);
+const INSTANTS = new Set(["filledAt", "occurredAt", "resetAt"]);
 
 export function readForm(form: HTMLFormElement) {
   const body: Record<string, unknown> = {};
@@ -80,6 +80,19 @@ export function toIst(value: string) {
 export function ownedBy(row: RecordData | null | undefined, username: string) {
   const actor = val(row, "submitted_by", "submittedBy", "created_by", "createdBy");
   return actor != null && String(actor) === username;
+}
+
+export function yardKind(row: RecordData) {
+  const kind = val(row, "kind");
+  return kind ? String(kind) : "OPERATING";
+}
+
+export function operatingYard(row: RecordData) {
+  return yardKind(row) === "OPERATING";
+}
+
+export function yardLabel(row: RecordData) {
+  return `${nameOf(row)} · ${yardKind(row).toLowerCase()}`;
 }
 
 export function nameOf(row: RecordData) {

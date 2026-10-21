@@ -4,7 +4,7 @@
 
 This milestone adds branches, customer projects and delivery sites, supplier companies and plants, a tonne-based material catalogue, and materials supplied by each plant. Each write records an audit event in the same transaction. Master records can be updated or marked inactive; there is no hard-delete endpoint for them.
 
-Internal users currently have company-wide access according to their role. Branch records do not yet restrict users to a branch or provide separate branch accounting. Customer, supplier and driver portal access stays closed until ownership links are implemented.
+Internal users currently have company-wide access according to their role. Branch records do not yet restrict users to a branch. Customer, supplier and driver logins are opened only after an approved account request, and then only for their own records. See [external accounts](external-accounts.md).
 
 ## Permissions
 

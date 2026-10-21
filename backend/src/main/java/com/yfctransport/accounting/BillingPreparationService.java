@@ -90,9 +90,6 @@ class BillingPreparationService {
     result.remove("source_snapshot");
     result.put("currency", "INR");
     result.put("unit", "TONNE");
-    result.put("tax_treatment", "PENDING_ACCOUNTANT_CONFIGURATION");
-    result.put("document_type", "BILLING_PREPARATION");
-    result.put("invoice_issued", false);
     UUID journal = (UUID) result.get("journal_id");
     String journalStatus = null;
     if (journal != null) {
@@ -101,6 +98,28 @@ class BillingPreparationService {
       result.put("journal_status", journalStatus);
     }
     result.put("ledger_posted", "POSTED".equals(journalStatus));
+    var tax =
+        db.queryForList(
+            "select * from billing_tax_assessments where preparation_id=?", result.get("id"));
+    if (tax.isEmpty()) {
+      result.put("tax_treatment", "PENDING_ACCOUNTANT_CONFIGURATION");
+      result.put("invoice_issued", false);
+      result.put("document_type", "BILLING_PREPARATION");
+    } else {
+      var assessed = norm(tax.getFirst());
+      boolean sales = "SALES_ORDER".equals(result.get("kind"));
+      result.put("tax_treatment", "ASSESSED");
+      result.put("supply", assessed.get("supply"));
+      result.put("invoice_number", assessed.get("invoice_number"));
+      result.put("invoice_issued", assessed.get("invoice_number") != null);
+      result.put("taxable_amount", assessed.get("taxable_amount"));
+      result.put("cgst_amount", assessed.get("cgst_amount"));
+      result.put("sgst_amount", assessed.get("sgst_amount"));
+      result.put("igst_amount", assessed.get("igst_amount"));
+      result.put("tax_total", assessed.get("tax_total"));
+      result.put("payable_total", assessed.get("payable_total"));
+      result.put("document_type", sales ? "TAX_INVOICE" : "SUPPLIER_BILL");
+    }
     return result;
   }
 
@@ -184,9 +203,8 @@ class BillingPreparationService {
                           l.transportRate()))
               .toList();
     } else {
-      if (r.quantityBasis() == BillingPreparationController.Basis.ORDERED)
-        throw new IllegalArgumentException(
-            "Choose LOADED, RECEIVED or ACCEPTED for a supplier receipt");
+      if (r.quantityBasis() != BillingPreparationController.Basis.LOADED)
+        throw new IllegalArgumentException("Supplier bills use the loaded quantity");
       var s = purchases.receipt(r.sourceId());
       party = s.supplierId();
       branch = s.branchId();
@@ -294,6 +312,17 @@ class BillingPreparationService {
             .map(this::norm)
             .toList());
     result.put(
+        "tax_lines",
+        db
+            .queryForList(
+                "select"
+                    + " position,component,hsn_or_sac,rate_percent,taxable_amount,cgst_amount,sgst_amount,igst_amount"
+                    + " from billing_tax_lines where preparation_id=? order by position,component",
+                id)
+            .stream()
+            .map(this::norm)
+            .toList());
+    result.put(
         "events",
         db
             .queryForList(
@@ -394,11 +423,14 @@ class BillingPreparationService {
     var row = one(id);
     String payload =
         json.writeValueAsString(
-            List.of(
+            payloadOf(
                 id,
                 r.periodId(),
                 r.entryDate(),
                 r.counterAccountId(),
+                r.cgstAccountId(),
+                r.sgstAccountId(),
+                r.igstAccountId(),
                 r.description().strip(),
                 r.reference().strip(),
                 actor()));
@@ -431,6 +463,11 @@ class BillingPreparationService {
     }
     if (((BigDecimal) row.get("subtotal")).signum() <= 0)
       throw conflict("Zero-priced preparations cannot create a ledger journal");
+    var assessedRows =
+        db.queryForList("select * from billing_tax_assessments where preparation_id=?", id);
+    if (assessedRows.isEmpty())
+      throw conflict("Enter the GST treatment on this bill before creating the ledger journal");
+    var assessed = norm(assessedRows.getFirst());
     branches.requireActive((UUID) row.get("branch_id"));
     String partyType =
         BillingPreparationController.Kind.SALES_ORDER.name().equals(row.get("kind"))
@@ -471,19 +508,41 @@ class BillingPreparationService {
     if (r.entryDate().isBefore((LocalDate) day(row.get("prepared_on"))))
       throw new IllegalArgumentException("Journal date cannot precede the preparation date");
     BigDecimal amount = (BigDecimal) row.get("subtotal");
+    BigDecimal payable = (BigDecimal) assessed.get("payable_total");
     boolean sales = partyType.equals("CUSTOMER");
-    var partyLine =
+    boolean intra = "INTRA_STATE".equals(assessed.get("supply"));
+    String gstType = sales ? "LIABILITY" : "ASSET";
+    UUID cgstAccount = gstAccount(r.cgstAccountId(), (BigDecimal) assessed.get("cgst_amount"), gstType, "CGST");
+    UUID sgstAccount = gstAccount(r.sgstAccountId(), (BigDecimal) assessed.get("sgst_amount"), gstType, "SGST");
+    UUID igstAccount = gstAccount(r.igstAccountId(), (BigDecimal) assessed.get("igst_amount"), gstType, "IGST");
+    if (intra && igstAccount != null)
+      throw conflict("An intra-state bill does not post IGST");
+    if (!intra && (cgstAccount != null || sgstAccount != null))
+      throw conflict("An inter-state bill posts IGST only");
+    if (cgstAccount != null && cgstAccount.equals(sgstAccount))
+      throw conflict("CGST and SGST need separate ledger accounts");
+    for (UUID gst : new UUID[] {cgstAccount, sgstAccount, igstAccount}) {
+      if (gst != null
+          && (gst.equals(partyAccount) || gst.equals(r.counterAccountId())))
+        throw conflict("GST account cannot be the party or the income/expense account");
+    }
+    boolean salesSide = sales;
+    var lines = new ArrayList<AccountingDtos.Line>();
+    lines.add(
         new AccountingDtos.Line(
             partyAccount,
-            sales ? amount : BigDecimal.ZERO,
-            sales ? BigDecimal.ZERO : amount,
-            "Party " + partyType.toLowerCase(Locale.ROOT) + " " + row.get("party_name"));
-    var counterLine =
+            salesSide ? payable : BigDecimal.ZERO,
+            salesSide ? BigDecimal.ZERO : payable,
+            "Party " + partyType.toLowerCase(Locale.ROOT) + " " + row.get("party_name")));
+    lines.add(
         new AccountingDtos.Line(
             r.counterAccountId(),
-            sales ? BigDecimal.ZERO : amount,
-            sales ? amount : BigDecimal.ZERO,
-            r.description().strip());
+            salesSide ? BigDecimal.ZERO : amount,
+            salesSide ? amount : BigDecimal.ZERO,
+            r.description().strip()));
+    addGst(lines, cgstAccount, salesSide, (BigDecimal) assessed.get("cgst_amount"), "CGST");
+    addGst(lines, sgstAccount, salesSide, (BigDecimal) assessed.get("sgst_amount"), "SGST");
+    addGst(lines, igstAccount, salesSide, (BigDecimal) assessed.get("igst_amount"), "IGST");
     accounting.journal(
         new AccountingDtos.Journal(
             r.journalId(),
@@ -492,7 +551,7 @@ class BillingPreparationService {
             r.entryDate(),
             r.description().strip(),
             r.reference().strip(),
-            List.of(partyLine, counterLine)));
+            lines));
     db.update(
         "insert into"
             + " billing_preparation_journals(journal_id,preparation_id,counter_account_id,create_payload,created_by)"
@@ -505,6 +564,191 @@ class BillingPreparationService {
     db.update("update billing_preparations set journal_id=? where id=?", r.journalId(), id);
     audit.record(
         "BILLING_PREPARATION_JOURNAL", "BILLING_PREPARATION", id, "Journal=" + r.journalId());
+    return get(id);
+  }
+
+  private List<Object> payloadOf(Object... values) {
+    return new ArrayList<>(Arrays.asList(values));
+  }
+
+  private UUID gstAccount(UUID id, BigDecimal amount, String expectedType, String label) {
+    if (amount.signum() == 0) {
+      if (id != null) throw conflict("This bill has no " + label + " to post");
+      return null;
+    }
+    if (id == null) throw new IllegalArgumentException(label + " account is required");
+    var rows = db.queryForList("select * from ledger_accounts where id=?", id);
+    if (rows.isEmpty())
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, label + " account not found");
+    var account = norm(rows.getFirst());
+    if (!Boolean.TRUE.equals(account.get("active"))) throw conflict(label + " account is inactive");
+    if (!expectedType.equals(account.get("type")))
+      throw conflict(label + " account must be an active " + expectedType + " account");
+    if (db.queryForObject(
+                "select count(*) from treasury_accounts where account_id=?", Integer.class, id)
+            > 0
+        || db.queryForObject(
+                "select count(*) from party_financial_profiles where account_id=?",
+                Integer.class,
+                id)
+            > 0)
+      throw conflict(label + " account cannot be a party or cash/bank account");
+    return id;
+  }
+
+  private void addGst(
+      List<AccountingDtos.Line> lines, UUID account, boolean sales, BigDecimal amount, String label) {
+    if (account == null || amount.signum() == 0) return;
+    lines.add(
+        new AccountingDtos.Line(
+            account,
+            sales ? BigDecimal.ZERO : amount,
+            sales ? amount : BigDecimal.ZERO,
+            label + " on this bill"));
+  }
+
+  Map<String, Object> tax(UUID id, BillingPreparationController.TaxInput r) {
+    lock();
+    var row = one(id);
+    var payloadItems = new ArrayList<Object>();
+    payloadItems.add(id);
+    payloadItems.add(r.supply().name());
+    payloadItems.add(actor());
+    for (var line : r.lines())
+      payloadItems.add(
+          List.of(line.position(), line.component().name(), line.hsnOrSac().strip(), line.ratePercent()));
+    String payload = json.writeValueAsString(payloadItems);
+    var existing =
+        db.queryForList("select * from billing_tax_assessments where preparation_id=?", id);
+    if (!existing.isEmpty()) {
+      var old = norm(existing.getFirst());
+      if (r.eventId().equals(old.get("event_id")) && payload.equals(old.get("create_payload"))) {
+        var result = get(id);
+        result.put("replayed", true);
+        return result;
+      }
+    }
+    if (db.queryForObject(
+            "select count(*) from billing_tax_assessments where event_id=?", Integer.class, r.eventId())
+        > 0)
+      throw conflict("Tax event ID used with different billing data or actor");
+    if (!"READY".equals(row.get("status")))
+      throw conflict("Only a READY bill can have GST entered");
+    if (actor().equals(row.get("created_by")))
+      throw conflict("A different user must enter the GST on this bill");
+    UUID current = (UUID) row.get("journal_id");
+    if (current != null && journalBlocksCancel(current))
+      throw conflict("Reject or reverse the linked journal before changing GST");
+    var expected = new LinkedHashMap<String, BigDecimal>();
+    for (var line :
+        db.queryForList(
+            "select position,material_amount,transport_amount from billing_preparation_lines where"
+                + " preparation_id=? order by position",
+            id)) {
+      var n = norm(line);
+      int position = ((Number) n.get("position")).intValue();
+      BigDecimal material = (BigDecimal) n.get("material_amount");
+      BigDecimal transport = (BigDecimal) n.get("transport_amount");
+      if (material.signum() > 0) expected.put(position + ":MATERIAL", material);
+      if (transport.signum() > 0) expected.put(position + ":TRANSPORT", transport);
+    }
+    if (r.lines().size() != expected.size())
+      throw new IllegalArgumentException(
+          "Enter one GST rate for each material and freight amount on this bill");
+    boolean intra = r.supply() == BillingPreparationController.Supply.INTRA_STATE;
+    BigDecimal taxable = BigDecimal.ZERO;
+    BigDecimal cgst = BigDecimal.ZERO;
+    BigDecimal sgst = BigDecimal.ZERO;
+    BigDecimal igst = BigDecimal.ZERO;
+    var computed = new ArrayList<Object[]>();
+    var seen = new HashSet<String>();
+    for (var line : r.lines()) {
+      String key = line.position() + ":" + line.component().name();
+      BigDecimal base = expected.get(key);
+      if (base == null || !seen.add(key))
+        throw new IllegalArgumentException("GST line does not match a taxable amount on this bill");
+      BigDecimal tax =
+          base.multiply(line.ratePercent()).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+      BigDecimal lineCgst = BigDecimal.ZERO;
+      BigDecimal lineSgst = BigDecimal.ZERO;
+      BigDecimal lineIgst = BigDecimal.ZERO;
+      if (intra) {
+        lineCgst = tax.divide(new BigDecimal("2"), 2, RoundingMode.HALF_UP);
+        lineSgst = tax.subtract(lineCgst);
+      } else lineIgst = tax;
+      taxable = taxable.add(base);
+      cgst = cgst.add(lineCgst);
+      sgst = sgst.add(lineSgst);
+      igst = igst.add(lineIgst);
+      computed.add(
+          new Object[] {
+            line.position(),
+            line.component().name(),
+            line.hsnOrSac().strip(),
+            line.ratePercent(),
+            base,
+            lineCgst,
+            lineSgst,
+            lineIgst
+          });
+    }
+    BigDecimal taxTotal = cgst.add(sgst).add(igst);
+    BigDecimal payable = taxable.add(taxTotal);
+    String invoice = null;
+    if (!existing.isEmpty()) invoice = (String) norm(existing.getFirst()).get("invoice_number");
+    else if ("SALES_ORDER".equals(row.get("kind"))) {
+      int year = day(row.get("prepared_on")).getYear();
+      var counters =
+          db.queryForList(
+              "select last_number from sales_invoice_counters where calendar_year=? for update",
+              year);
+      int next;
+      if (counters.isEmpty()) {
+        next = 1;
+        db.update(
+            "insert into sales_invoice_counters(calendar_year,last_number) values(?,?)", year, next);
+      } else {
+        next = ((Number) norm(counters.getFirst()).get("last_number")).intValue() + 1;
+        db.update(
+            "update sales_invoice_counters set last_number=? where calendar_year=?", next, year);
+      }
+      invoice = "SI-" + year + "-" + String.format("%05d", next);
+    }
+    if (!existing.isEmpty()) {
+      db.update("delete from billing_tax_lines where preparation_id=?", id);
+      db.update("delete from billing_tax_assessments where preparation_id=?", id);
+    }
+    db.update(
+        "insert into billing_tax_assessments(preparation_id,supply,invoice_number,taxable_amount,"
+            + " cgst_amount,sgst_amount,igst_amount,tax_total,payable_total,event_id,assessed_by,create_payload)"
+            + " values(?,?,?,?,?,?,?,?,?,?,?,?)",
+        id,
+        r.supply().name(),
+        invoice,
+        taxable,
+        cgst,
+        sgst,
+        igst,
+        taxTotal,
+        payable,
+        r.eventId(),
+        actor(),
+        payload);
+    for (var line : computed)
+      db.update(
+          "insert into billing_tax_lines(preparation_id,position,component,hsn_or_sac,rate_percent,"
+              + " taxable_amount,cgst_amount,sgst_amount,igst_amount) values(?,?,?,?,?,?,?,?,?)",
+          id,
+          line[0],
+          line[1],
+          line[2],
+          line[3],
+          line[4],
+          line[5],
+          line[6],
+          line[7]);
+    audit.record(
+        "BILLING_TAX_ASSESSED", "BILLING_PREPARATION", id, "Supply=" + r.supply().name());
     return get(id);
   }
 

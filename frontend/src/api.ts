@@ -79,11 +79,30 @@ export async function binary(path: string) {
 }
 export async function login(username: string, password: string) {
   await token();
-  await request("/login", {
+  const headers = new Headers({ "Content-Type": "application/x-www-form-urlencoded" });
+  headers.set(csrf!.headerName, csrf!.token);
+  const response = await fetch("/login", {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers,
+    credentials: "same-origin",
     body: new URLSearchParams({ username, password }),
   });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const server =
+      typeof body?.detail === "string"
+        ? body.detail
+        : typeof body?.message === "string"
+          ? body.message
+          : "";
+    throw new ApiError(
+      response.status,
+      server ||
+        (response.status === 401
+          ? "The username or password is not correct."
+          : `Request failed (${response.status}). Please try again.`),
+    );
+  }
   csrf = undefined;
   await token();
 }

@@ -1,6 +1,6 @@
 # Billing preparation
 
-This phase prepares reviewable sales and supplier billing records while YFC's accountant confirms GST rules. Marking a preparation READY means its commercial basis was independently checked. It does not issue a statutory invoice, invent tax amounts or allocate a payment. V16 can create a before-tax DRAFT journal from a READY preparation onto the party's ledger account; posting that journal still uses the existing independent journal review.
+This phase prepares one bill for a whole sales order, or for one supplier receipt at the loaded quantity. Marking a preparation READY means its commercial basis was independently checked. The accountant then types the GST rate on that bill. A sales bill receives an invoice number. Posting the linked journal is still a separate review. This does not file an e-invoice with the government portal and it does not allocate a payment.
 
 No new environment variables, AWS resources or bank credentials are required. Flyway migration V15 adds the preparation, line, source-claim and review-event tables. V16 links at most one current journal per preparation. Existing orders, receipts and journals are preserved. No live preparations or opening balances are seeded.
 
@@ -9,13 +9,13 @@ No new environment variables, AWS resources or bank credentials are required. Fl
 | Kind | Source ID | Quantity basis | Price source |
 |---|---|---|---|
 | SALES_ORDER | Confirmed sales order UUID | ORDERED only | Each saved order item's material and transport rates |
-| PURCHASE_RECEIPT | Recorded purchase receipt UUID | Explicit LOADED, RECEIVED or ACCEPTED | Receipt's purchase-order rate |
+| PURCHASE_RECEIPT | Recorded purchase receipt UUID | LOADED only | Receipt's purchase-order rate |
 
 A sales preparation includes every item on one order and the full ordered quantity. For 100 ordered, 99 loaded and 98 received, the preparation uses **100 tonnes**. Loaded/received quantities remain visible as facts captured when preparing the record. The draft can precede dispatch because billing is agreed on ordered quantity; preparing it does not assert delivery completion. Legacy combined material/freight rates remain combined exactly as saved; no split is invented. TRANSPORT-only orders retain their transport rate and zero material rate.
 
-A supplier preparation covers one complete receipt, with a mandatory basis reason and evidence reference. A receipt with a pending or approved reversal cannot be billed; cancel or reject that reversal first. No supplier billing basis has been assumed. For example, loaded 9 / received 8 / accepted 7 at INR 1,000.55 prepares INR 9,004.95, 8,004.40 or 7,003.85 respectively, depending on the explicitly selected agreement. ACCEPTED cannot be chosen when accepted quantity is zero. Multi-receipt supplier invoices and partial quantity billing remain later work.
+A supplier preparation covers one complete receipt and always uses the **loaded** quantity. Received and accepted weights stay on the receipt as facts; they are not a billing choice. For loaded 9 tonnes at INR 1,000.55 the preparation is INR 9,004.95. Multi-receipt supplier invoices and partial quantity billing remain later work.
 
-Prices cannot be submitted or overridden through this API. Material and transport amounts are rounded separately per line to two decimal places using HALF_UP; subtotal sums those rounded components with exact decimal arithmetic. Zero-priced source items remain zero-priced. Tax is pending, not inferred as zero tax, and there is no final payable total.
+Prices cannot be submitted or overridden through this API. Material and transport amounts are rounded separately per line to two decimal places using HALF_UP; subtotal sums those rounded components with exact decimal arithmetic. Zero-priced source items remain zero-priced. GST is entered afterwards by the accountant on that bill; it is not taken from a fixed rate list.
 
 Preparations snapshot party name, source IDs, branch, source commercial terms, source quantities and rates. Later deliveries or master-name changes do not rewrite them. The source must have an active branch. Preparation dates cannot be future-dated or precede the order creation/receipt date. Historical preparation reads remain available when a branch is later disabled.
 
@@ -31,7 +31,8 @@ Only SUPER_ADMIN and ACCOUNTS may read or write these endpoints. Session login a
 | POST | `/api/v1/accounting/billing-preparations/{id}/ready` | Independently verify the commercial draft |
 | POST | `/api/v1/accounting/billing-preparations/{id}/reject` | Independently reject a draft |
 | POST | `/api/v1/accounting/billing-preparations/{id}/cancel` | Independently cancel a draft or READY preparation |
-| POST | `/api/v1/accounting/billing-preparations/{id}/journals` | Create a balanced before-tax DRAFT journal from a READY preparation |
+| POST | `/api/v1/accounting/billing-preparations/{id}/tax` | Accountant enters GST on a READY bill |
+| POST | `/api/v1/accounting/billing-preparations/{id}/journals` | Create a draft journal from a READY bill after GST has been entered |
 
 List supports `page` (default 0), `size` (default 20, maximum 100), `kind`, `partyId` and `branchId`. Party IDs refer to customers/suppliers, not financial-profile IDs; use `kind` to identify the party type. Results use stable creation-time/UUID ordering. List responses omit the full source snapshot and line/event arrays.
 
@@ -50,7 +51,7 @@ Example sales request (replace UUIDs with actual IDs):
 }
 ```
 
-For a supplier request, set `kind` to `PURCHASE_RECEIPT`, supply the receipt UUID and explicitly choose LOADED, RECEIVED or ACCEPTED with its agreement evidence. The reference is supporting commercial information, not an issued invoice number and not a supplier-invoice uniqueness key.
+For a supplier request, set `kind` to `PURCHASE_RECEIPT`, supply the receipt UUID and set `quantityBasis` to `LOADED`. The reference is supporting commercial information, not an issued invoice number and not a supplier-invoice uniqueness key.
 
 Review requests use a client-generated event UUID:
 
@@ -73,6 +74,24 @@ Reject or cancel a preparation to release the claim, then submit a corrected rep
 
 Create retries require the same UUID, input and actor; surrounding whitespace in reference/evidence/reason fields is normalized. Exact retries return 200 with `replayed: true`; new preparations return 201. Changed data or actor conflicts. Review event retries require the same event UUID, target, action, normalized reason and actor; a conflicting reuse returns 409. Review, claim changes and audit entries commit atomically.
 
+## GST on the bill
+
+POST `/api/v1/accounting/billing-preparations/{id}/tax` after the preparation is READY. The creator cannot enter the tax. Send one line for every material or freight amount that is above zero:
+
+```json
+{
+  "eventId": "CLIENT_GENERATED_UUID",
+  "supply": "INTRA_STATE",
+  "lines": [
+    {"position": 1, "component": "MATERIAL", "hsnOrSac": "251710", "ratePercent": 5.00}
+  ]
+}
+```
+
+`supply` is `INTRA_STATE` or `INTER_STATE`. The rate is whatever the accountant types, from 0 to 100 with up to two decimal places. Tax is `amount × rate / 100`, rounded HALF_UP to paise. Intra-state tax is split into CGST and SGST so the two halves add back to the tax. Inter-state tax is entirely IGST. A sales bill then receives the next `SI-YYYY-#####` number. A supplier bill records the same tax without a sales invoice number. This does not file an e-invoice or e-way bill with the government portal. There is no TDS.
+
+The ledger journal cannot be created until this tax has been saved. A nil rate is an explicit choice and still issues the sales invoice number.
+
 ## Ledger posting from READY preparations
 
 POST `/api/v1/accounting/billing-preparations/{id}/journals`
@@ -83,24 +102,25 @@ POST `/api/v1/accounting/billing-preparations/{id}/journals`
   "periodId": "OPEN_PERIOD_UUID",
   "entryDate": "YYYY-MM-DD",
   "counterAccountId": "INCOME_OR_EXPENSE_ACCOUNT_UUID",
-  "description": "Before-tax sales posting from independently reviewed preparation",
+  "cgstAccountId": "OPTIONAL_UUID",
+  "sgstAccountId": "OPTIONAL_UUID",
+  "igstAccountId": "OPTIONAL_UUID",
+  "description": "Sales invoice including the GST entered on this bill",
   "reference": "Billing preparation supporting reference"
 }
 ```
 
-Only SUPER_ADMIN and ACCOUNTS may create this journal. The preparation must be READY, have a positive subtotal, an active branch and an existing party financial profile. The journal date cannot precede the preparation date or be outside the named open period. Zero-priced preparations cannot post.
+Only SUPER_ADMIN and ACCOUNTS may create this journal. The preparation must be READY, have GST entered, have a positive subtotal, an active branch and an existing party financial profile. The journal date cannot precede the preparation date or be outside the named open period. Zero-priced preparations cannot post.
 
-The caller chooses the counter account. Sales require an active INCOME account; supplier receipts require an active EXPENSE account. The counter cannot be the party's dedicated account or a registered cash/bank account. The generated journal is a two-line INR draft:
+The caller chooses the counter account. Sales require an active INCOME account; supplier receipts require an active EXPENSE account. The counter cannot be the party's dedicated account or a registered cash/bank account. GST accounts are required only for the taxes that are above zero. Sales GST accounts are LIABILITY accounts. Purchase GST accounts are ASSET accounts. CGST and SGST must be different accounts.
 
-- Sales: debit the customer ASSET, credit the chosen INCOME account for the preparation subtotal.
-- Purchase: debit the chosen EXPENSE account, credit the supplier LIABILITY for the preparation subtotal.
+The generated journal is an INR draft:
 
-Tax is not inferred. The draft uses the existing journal numbering and independent post/reject workflow. `ledger_posted` stays false until that journal is POSTED. A REJECTED linked journal may be replaced with a new journal UUID. A DRAFT or unreversed POSTED linked journal blocks cancellation of the preparation; reject it, or post a reversing journal, then cancel so a replacement preparation can claim the source. Exact journal-create retries reuse the same journal UUID, preparation, period, date, counter account, normalized description/reference and actor.
+- Sales: debit the customer for the payable total, credit income for the subtotal, and credit each GST liability.
+- Purchase: debit the expense for the subtotal, debit each GST asset, and credit the supplier for the payable total.
 
-This is before-tax commercial posting, not a GST invoice, credit note or payment allocation.
+The draft uses the existing journal numbering and independent post/reject workflow. `ledger_posted` stays false until that journal is POSTED. A REJECTED linked journal may be replaced with a new journal UUID. A DRAFT or unreversed POSTED linked journal blocks cancellation of the preparation and blocks a change to the GST. Exact journal-create retries reuse the same journal UUID, preparation, period, date, accounts, normalized description/reference and actor.
 
-## Next billing decisions
+## Still open
 
-Before invoice issuance, confirm the seller legal entity and GST registrations, invoice series/financial-year policy, material and freight GST classification, place-of-supply treatment, reverse charge, rounding, credit/debit notes and any withholding. Those rules are not inferred by this phase. The accountant also needs to confirm revenue/purchase/tax account mappings and the supplier's quantity agreement.
-
-Tax invoices, supplier invoice-number checks, multi-receipt matching, partial billing, payment allocation, ageing, credit notes and invoice PDFs remain to be implemented. READY preparation subtotals do not change party balances by themselves; only a posted linked journal does. Recorded money vouchers continue to work independently. No bank transfers are executed.
+Payment allocation, ageing, credit notes, multi-receipt supplier invoices, partial billing and government e-invoice or e-way filing are not implemented. No opening balances and no TDS are recorded. READY preparation subtotals do not change party balances by themselves; only a posted linked journal does. Recorded money vouchers continue to work independently. No bank transfers are executed.

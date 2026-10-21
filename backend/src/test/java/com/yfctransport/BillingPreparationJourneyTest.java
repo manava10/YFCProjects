@@ -182,34 +182,27 @@ class BillingPreparationJourneyTest {
     String source = receipt("7");
     var approved = reversal();
     h.action("/api/v1/purchase-receipts/" + source + "/reversals", approved, 201);
-    h.action(API, body("PURCHASE_RECEIPT", source, "ACCEPTED"), 409);
+    h.action(API, body("PURCHASE_RECEIPT", source, "LOADED"), 409);
     assertThat(reviewReversal(approved.get("reversalId").toString(), "approve")).isEqualTo(200);
-    h.action(API, body("PURCHASE_RECEIPT", source, "ACCEPTED"), 409);
+    h.action(API, body("PURCHASE_RECEIPT", source, "LOADED"), 409);
     String other = receipt("7");
     var pending = reversal();
     h.action("/api/v1/purchase-receipts/" + other + "/reversals", pending, 201);
-    h.action(API, body("PURCHASE_RECEIPT", other, "ACCEPTED"), 409);
+    h.action(API, body("PURCHASE_RECEIPT", other, "LOADED"), 409);
     assertThat(reviewReversal(pending.get("reversalId").toString(), "reject")).isEqualTo(200);
-    create(body("PURCHASE_RECEIPT", other, "ACCEPTED"));
+    create(body("PURCHASE_RECEIPT", other, "LOADED"));
   }
 
   @Test
-  void supplierMustExplicitlyChooseTheReceiptWeightAndPreservesEvidence() throws Exception {
+  void supplierBillsUseTheLoadedQuantity() throws Exception {
     String source = receipt("7");
-    var r = body("PURCHASE_RECEIPT", source, "ACCEPTED");
-    String id = create(r);
+    h.action(API, body("PURCHASE_RECEIPT", source, "ACCEPTED"), 400);
+    h.action(API, body("PURCHASE_RECEIPT", source, "RECEIVED"), 400);
+    String id = create(body("PURCHASE_RECEIPT", source, "LOADED"));
     var result = getOne(id);
-    assertThat(result.read("$.lines[0].quantity", BigDecimal.class)).isEqualByComparingTo("7");
-    assertThat(result.read("$.subtotal", BigDecimal.class)).isEqualByComparingTo("7003.85");
-    assertThat(result.read("$.source_snapshot.acceptedQuantity", BigDecimal.class))
-        .isEqualByComparingTo("7");
-    assertThat(review(id, "reject", event(), "reviewer")).isEqualTo(200);
-    r = body("PURCHASE_RECEIPT", source, "LOADED");
-    id = create(r);
-    assertThat(getOne(id).read("$.subtotal", BigDecimal.class)).isEqualByComparingTo("9004.95");
-    assertThat(review(id, "reject", event(), "reviewer")).isEqualTo(200);
-    id = create(body("PURCHASE_RECEIPT", source, "RECEIVED"));
-    assertThat(getOne(id).read("$.subtotal", BigDecimal.class)).isEqualByComparingTo("8004.40");
+    assertThat(result.read("$.lines[0].quantity", BigDecimal.class)).isEqualByComparingTo("9");
+    assertThat(result.read("$.subtotal", BigDecimal.class)).isEqualByComparingTo("9004.95");
+    assertThat(result.read("$.quantity_basis", String.class)).isEqualTo("LOADED");
   }
 
   @Test
@@ -290,7 +283,7 @@ class BillingPreparationJourneyTest {
     r.put("preparedOn", h.helpers.today().minusDays(1).toString());
     h.action(API, r, 400);
     r = body("PURCHASE_RECEIPT", receipt("0"), "ACCEPTED");
-    h.action(API, r, 409);
+    h.action(API, r, 400);
     r.put("quantityBasis", "ORDERED");
     h.action(API, r, 400);
     r.put("quantityBasis", "LOADED");
@@ -523,6 +516,7 @@ class BillingPreparationJourneyTest {
     String period = periodCoveringToday();
     String id = create(sale());
     assertThat(review(id, "ready", event(), "reviewer")).isEqualTo(200);
+    assessZero(id);
     var journal =
         Map.of(
             "journalId",
@@ -540,7 +534,7 @@ class BillingPreparationJourneyTest {
     h.action(API + "/" + id + "/journals", journal, 201);
     h.action(API + "/" + id + "/journals", journal, 200);
     assertThat(getOne(id).read("$.ledger_posted", Boolean.class)).isFalse();
-    assertThat(getOne(id).read("$.invoice_issued", Boolean.class)).isFalse();
+    assertThat(getOne(id).read("$.invoice_issued", Boolean.class)).isTrue();
     mvc.perform(
             post("/api/v1/accounting/journals/" + journal.get("journalId") + "/post")
                 .with(user("ledger-reviewer").roles("ACCOUNTS"))
@@ -557,6 +551,46 @@ class BillingPreparationJourneyTest {
     assertThat(getOne(id).read("$.ledger_posted", Boolean.class)).isTrue();
     assertThat(getOne(id).read("$.journal_status", String.class)).isEqualTo("POSTED");
     assertThat(review(id, "cancel", event(), "reviewer")).isEqualTo(409);
+  }
+
+  void assessZero(String id) throws Exception {
+    var lines = getOne(id).read("$.lines", List.class);
+    var taxLines = new ArrayList<Map<String, Object>>();
+    for (Object raw : lines) {
+      var line = (Map<?, ?>) raw;
+      int position = ((Number) line.get("position")).intValue();
+      if (new BigDecimal(line.get("material_amount").toString()).signum() > 0)
+        taxLines.add(
+            Map.of(
+                "position",
+                position,
+                "component",
+                "MATERIAL",
+                "hsnOrSac",
+                "251710",
+                "ratePercent",
+                "0.00"));
+      if (new BigDecimal(line.get("transport_amount").toString()).signum() > 0)
+        taxLines.add(
+            Map.of(
+                "position",
+                position,
+                "component",
+                "TRANSPORT",
+                "hsnOrSac",
+                "996511",
+                "ratePercent",
+                "0.00"));
+    }
+    mvc.perform(
+            post(API + "/" + id + "/tax")
+                .with(user("reviewer").roles("ACCOUNTS"))
+                .with(csrf())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(
+                        Map.of("eventId", uid(), "supply", "INTRA_STATE", "lines", taxLines))))
+        .andExpect(status().isCreated());
   }
 
   void postJournal(String journalId) throws Exception {
@@ -597,6 +631,7 @@ class BillingPreparationJourneyTest {
     String period = periodCoveringToday();
     String id = create(sale());
     assertThat(review(id, "ready", event(), "reviewer")).isEqualTo(200);
+    assessZero(id);
     var journal =
         Map.of(
             "journalId",
@@ -655,6 +690,94 @@ class BillingPreparationJourneyTest {
     h.action(API + "/" + id + "/journals", journal, 409);
     assertThat(review(id, "ready", event(), "reviewer")).isEqualTo(200);
     h.action(API + "/" + id + "/journals", journal, 409);
+  }
+
+  @Test
+  void accountantEntersGstOnTheWholeOrderAndTheJournalCarriesIt() throws Exception {
+    String id = create(sale());
+    assertThat(review(id, "ready", event(), "reviewer")).isEqualTo(200);
+    var tax =
+        Map.of(
+            "eventId",
+            uid(),
+            "supply",
+            "INTRA_STATE",
+            "lines",
+            List.of(
+                Map.of(
+                    "position",
+                    1,
+                    "component",
+                    "MATERIAL",
+                    "hsnOrSac",
+                    "251710",
+                    "ratePercent",
+                    new BigDecimal("5.00"))));
+    mvc.perform(
+            post(API + "/" + id + "/tax")
+                .with(csrf())
+                .contentType("application/json")
+                .content(json.writeValueAsString(tax)))
+        .andExpect(status().isConflict());
+    mvc.perform(
+            post(API + "/" + id + "/tax")
+                .with(user("reviewer").roles("ACCOUNTS"))
+                .with(csrf())
+                .contentType("application/json")
+                .content(json.writeValueAsString(tax)))
+        .andExpect(status().isCreated());
+    var bill = getOne(id);
+    assertThat(bill.read("$.invoice_issued", Boolean.class)).isTrue();
+    assertThat(bill.read("$.invoice_number", String.class)).startsWith("SI-");
+    assertThat(bill.read("$.cgst_amount", BigDecimal.class)).isEqualByComparingTo("3000.00");
+    assertThat(bill.read("$.sgst_amount", BigDecimal.class)).isEqualByComparingTo("3000.00");
+    assertThat(bill.read("$.igst_amount", BigDecimal.class)).isEqualByComparingTo("0");
+    assertThat(bill.read("$.payable_total", BigDecimal.class)).isEqualByComparingTo("126000.00");
+    String income = account("INCOME");
+    String receivable = account("ASSET");
+    String cgst = account("LIABILITY");
+    String sgst = account("LIABILITY");
+    h.create(
+        "/api/v1/accounting/parties",
+        Map.of(
+            "profileId",
+            uid(),
+            "partyType",
+            "CUSTOMER",
+            "partyId",
+            f.sales().customer(),
+            "accountId",
+            receivable,
+            "paymentTermsDays",
+            30,
+            "creditLimit",
+            new BigDecimal("500000.00")));
+    var journal =
+        new HashMap<String, Object>(
+            Map.of(
+                "journalId",
+                uid(),
+                "periodId",
+                periodCoveringToday(),
+                "entryDate",
+                h.helpers.today().toString(),
+                "counterAccountId",
+                income,
+                "description",
+                "Sales invoice including accountant-entered GST",
+                "reference",
+                uid()));
+    journal.put("cgstAccountId", cgst);
+    journal.put("sgstAccountId", sgst);
+    h.action(API + "/" + id + "/journals", journal, 201);
+    postJournal(journal.get("journalId").toString());
+    BigDecimal partyDebit =
+        db.queryForObject(
+            "select debit from journal_lines where journal_id=? and account_id=?",
+            BigDecimal.class,
+            UUID.fromString(journal.get("journalId").toString()),
+            UUID.fromString(receivable));
+    assertThat(partyDebit).isEqualByComparingTo("126000.00");
   }
 
   @Test

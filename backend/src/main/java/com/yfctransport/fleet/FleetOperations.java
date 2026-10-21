@@ -14,7 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
-class FleetOperations implements FleetAssignments {
+class FleetOperations implements FleetAssignments, DriverOpening {
   private final JdbcTemplate db;
   private final BranchRegistry branches;
   private final AuditTrail audit;
@@ -243,6 +243,35 @@ class FleetOperations implements FleetAssignments {
         truck,
         driver,
         trip);
+  }
+
+  @Override
+  public UUID open(
+      UUID branchId,
+      String name,
+      String mobile,
+      String licenseNumber,
+      LocalDate licenseExpiry,
+      String emergencyContact,
+      String emergencyMobile) {
+    if (db.queryForObject(
+            "select count(*) from drivers where license_number=?",
+            Integer.class,
+            licenseNumber.toUpperCase(Locale.ROOT))
+        > 0) throw conflict("A driver with this licence number is already registered");
+    return (UUID)
+        driver(
+                null,
+                new DriverInput(
+                    branchId,
+                    name,
+                    mobile,
+                    licenseNumber,
+                    licenseExpiry,
+                    emergencyContact,
+                    emergencyMobile,
+                    true))
+            .get("id");
   }
 
   @Override

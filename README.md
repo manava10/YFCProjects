@@ -10,8 +10,9 @@ See [backend setup and API examples](backend/README.md) and [scope and next mile
 - Fulfilment can use YFC stock or direct supplier delivery.
 - Billing quantity is agreed ordered quantity: 100 ordered, 99 loaded, 98 received still means 100 billable.
 - YFC bears diesel and toll costs. Customer bears loading/unloading; supplier bears royalty.
-- Customer GSTIN is optional at enquiry/customer creation; transaction-specific tax validation remains to be implemented.
-- Balanced journal posting and recorded money vouchers are implemented. Before-tax sales/purchase journals can be created from READY billing preparations. Invoice allocation, GST invoices and remaining financial workflows remain pending.
+- Customer GSTIN is optional at enquiry/customer creation. On a bill, the accountant types the GST rate; it is not a fixed rate in the software. Supplier bills use the loaded quantity. There is no TDS and no opening-balance import.
+- Balanced journal posting and recorded money vouchers are implemented. A READY bill can be given GST and then posted to the party ledger, including the tax the accountant entered. Invoice-to-payment allocation and government e-invoice filing remain pending.
+- Customers, suppliers and drivers can request a login. An administrator or an operations user approves it. After that they see only their own records.
 
 Local setup: [prepared environment and startup scripts](docs/local-environment.md). Business records: [API examples](docs/business-masters.md).
 
@@ -38,3 +39,5 @@ Customer/supplier financial profiles and party ledgers: [API guide](docs/party-f
 Recorded receipts, payments and refunds: [API guide](docs/receipts-and-payments.md).
 
 Sales and supplier billing preparation: [workflow and API guide](docs/billing-preparation.md).
+
+Customer, supplier and driver account requests: [signup and approval](docs/external-accounts.md).

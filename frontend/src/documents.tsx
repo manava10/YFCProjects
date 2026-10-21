@@ -8,11 +8,20 @@ export function Documents({
   targetType,
   targetId,
 }: {
-  targetType: "TRIP" | "INCIDENT" | "FUEL" | "EXPENSE";
+  targetType:
+    | "TRIP"
+    | "INCIDENT"
+    | "FUEL"
+    | "EXPENSE"
+    | "STOCK_ADJUSTMENT"
+    | "STOCK_TRANSFER"
+    | "STOCK_OPENING";
   targetId: string;
 }) {
   const client = useQueryClient();
   const [documentId, setDocumentId] = useState(uuid);
+  const [downloadError, setDownloadError] = useState<unknown>(null);
+  const [downloading, setDownloading] = useState(false);
   const q = useQuery({
     queryKey: ["documents", targetType, targetId],
     queryFn: () =>
@@ -47,19 +56,29 @@ export function Documents({
         </Field>
         <button disabled={mutation.isPending}>{mutation.isPending ? "Uploading…" : "Upload"}</button>
       </form>
+      <ErrorBox error={downloadError} />
       <ul className="chip-list">
         {q.data?.map((row) => (
           <li key={String(val(row, "id"))}>
             <button
               className="secondary"
+              disabled={downloading}
               onClick={async () => {
-                const blob = await binary(`/api/v1/documents/${val(row, "id")}/content`);
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = String(val(row, "filename") ?? "document");
-                link.click();
-                URL.revokeObjectURL(url);
+                setDownloadError(null);
+                setDownloading(true);
+                try {
+                  const blob = await binary(`/api/v1/documents/${val(row, "id")}/content`);
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = String(val(row, "filename") ?? "document");
+                  link.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch (error) {
+                  setDownloadError(error);
+                } finally {
+                  setDownloading(false);
+                }
               }}
             >
               {String(val(row, "filename") ?? shortName(row))}

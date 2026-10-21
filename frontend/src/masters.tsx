@@ -235,7 +235,7 @@ export function Materials() {
           <h3>
             {selected.name} · {selected.code}
           </h3>
-          <SaveForm path={`/api/v1/materials/${selected.id}`} method="PUT">
+          <SaveForm path={`/api/v1/materials/${selected.id}`} method="PUT" onSuccess={setSelected}>
             <MaterialFields current={selected} />
           </SaveForm>
           <SaveForm path={`/api/v1/materials/${selected.id}/status`} method="PATCH">
@@ -315,7 +315,7 @@ export function Branches() {
       {selected && admin && (
         <div className="panel form-panel">
           <h3>{selected.name}</h3>
-          <SaveForm path={`/api/v1/branches/${selected.id}`} method="PUT">
+          <SaveForm path={`/api/v1/branches/${selected.id}`} method="PUT" onSuccess={setSelected}>
             <BranchFields current={selected} />
           </SaveForm>
           <SaveForm path={`/api/v1/branches/${selected.id}/status`} method="PATCH">

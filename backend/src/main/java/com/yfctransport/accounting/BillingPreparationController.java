@@ -2,6 +2,7 @@ package com.yfctransport.accounting;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import org.springframework.http.ResponseEntity;
@@ -39,8 +40,33 @@ class BillingPreparationController {
       @NotNull UUID periodId,
       @NotNull LocalDate entryDate,
       @NotNull UUID counterAccountId,
+      UUID cgstAccountId,
+      UUID sgstAccountId,
+      UUID igstAccountId,
       @NotBlank @Size(max = 1000) String description,
       @NotBlank @Size(max = 300) String reference) {}
+
+  enum Supply {
+    INTRA_STATE,
+    INTER_STATE
+  }
+
+  enum Component {
+    MATERIAL,
+    TRANSPORT
+  }
+
+  record TaxLine(
+      @NotNull @Min(1) Integer position,
+      @NotNull Component component,
+      @NotBlank @Pattern(regexp = "[0-9]{4,8}") String hsnOrSac,
+      @NotNull @DecimalMin("0.00") @DecimalMax("100.00") @Digits(integer = 3, fraction = 2)
+          BigDecimal ratePercent) {}
+
+  record TaxInput(
+      @NotNull UUID eventId,
+      @NotNull Supply supply,
+      @NotNull @Size(max = 200) List<@NotNull @Valid TaxLine> lines) {}
 
   private final BillingPreparationService service;
 
@@ -83,6 +109,14 @@ class BillingPreparationController {
   @PostMapping("/{id}/cancel")
   Map<String, Object> cancel(@PathVariable UUID id, @Valid @RequestBody AccountingDtos.Decision r) {
     return service.decide(id, r, "CANCEL");
+  }
+
+  @PostMapping("/{id}/tax")
+  ResponseEntity<Map<String, Object>> tax(
+      @PathVariable UUID id, @Valid @RequestBody TaxInput r) {
+    var result = service.tax(id, r);
+    return ResponseEntity.status(Boolean.TRUE.equals(result.get("replayed")) ? 200 : 201)
+        .body(result);
   }
 
   @PostMapping("/{id}/journals")

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Layers3, Plus } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Layers3, Plus } from "lucide-react";
 import { collect, post, request, type Page, type RecordData } from "./api";
 import { groups, label, nameOf, ownedBy, readForm, scalars, short, text, uuid, val } from "./lib";
 
@@ -10,6 +11,9 @@ export type Access = {
   admin: boolean;
   operations: boolean;
   accounts: boolean;
+  customer: boolean;
+  supplier: boolean;
+  driver: boolean;
   write: boolean;
   finance: boolean;
   review: boolean;
@@ -20,6 +24,9 @@ export const AccessContext = createContext<Access>({
   admin: false,
   operations: false,
   accounts: false,
+  customer: false,
+  supplier: false,
+  driver: false,
   write: false,
   finance: false,
   review: false,
@@ -40,6 +47,8 @@ export function Status({ value }: { value?: string | boolean | null }) {
   return <span className={`status ${textValue.toLowerCase()}`}>{label(textValue)}</span>;
 }
 
+const FieldFeedback = createContext<HTMLDivElement | null>(null);
+
 export function Field({
   label: caption,
   children,
@@ -47,11 +56,54 @@ export function Field({
   label: string;
   children: React.ReactNode;
 }) {
+  const [feedback, setFeedback] = useState<HTMLDivElement | null>(null);
   return (
-    <label className="field">
-      <span>{caption}</span>
-      {children}
-    </label>
+    <FieldFeedback.Provider value={feedback}>
+      <div className="field">
+        <label className="field-label">
+          <span>{caption}</span>
+          {children}
+        </label>
+        <div ref={setFeedback} />
+      </div>
+    </FieldFeedback.Provider>
+  );
+}
+
+export function PasswordInput({
+  name,
+  autoComplete,
+  minLength,
+  maxLength,
+  required = true,
+}: {
+  name: string;
+  autoComplete?: string;
+  minLength?: number;
+  maxLength?: number;
+  required?: boolean;
+}) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="secret">
+      <input
+        name={name}
+        type={shown ? "text" : "password"}
+        autoComplete={autoComplete}
+        minLength={minLength}
+        maxLength={maxLength}
+        required={required}
+      />
+      <button
+        type="button"
+        className="secret-toggle"
+        aria-pressed={shown}
+        aria-label={shown ? "Hide password" : "Show password"}
+        onClick={() => setShown((value) => !value)}
+      >
+        {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
   );
 }
 
@@ -180,19 +232,32 @@ export function Choices({
   path,
   empty,
   labelOf,
+  filter,
 }: {
   path: string;
   empty: string;
   labelOf?: (row: RecordData) => string;
+  filter?: (row: RecordData) => boolean;
 }) {
   const q = useQuery({
     queryKey: ["directory", path],
     queryFn: () => collect(path),
   });
+  const feedback = useContext(FieldFeedback);
+  const rows = filter ? q.data?.filter(filter) : q.data;
   return (
     <>
-      <option value="">{q.isPending ? "Loading…" : empty}</option>
-      {q.data?.map((row) => (
+      <option value="">{q.isPending ? "Loading…" : q.isError ? "Unable to load options" : empty}</option>
+      {q.isError && feedback && createPortal(
+        <div>
+          <ErrorBox error={q.error} />
+          <button type="button" className="secondary" disabled={q.isFetching}
+            onClick={() => { void q.refetch(); }}>
+            {q.isFetching ? "Retrying…" : "Retry loading options"}
+          </button>
+        </div>, feedback,
+      )}
+      {rows?.map((row) => (
         <option key={String(val(row, "id"))} value={String(val(row, "id"))}>
           {labelOf ? labelOf(row) : nameOf(row)}
         </option>
@@ -388,21 +453,27 @@ export function ReviewBox({
   );
 }
 
-export function SaveForm({
-  title,
-  path,
-  method = "POST",
-  children,
-  prepare,
-  onSuccess,
-}: {
+type SaveFormProps = {
   title?: string;
   path: string;
   method?: "POST" | "PUT" | "PATCH";
   children: React.ReactNode;
   prepare?: (body: Record<string, unknown>) => Record<string, unknown>;
   onSuccess?: (row: RecordData) => void;
-}) {
+};
+
+export function SaveForm(props: SaveFormProps) {
+  return <RecordSaveForm key={`${props.method ?? "POST"}:${props.path}`} {...props} />;
+}
+
+function RecordSaveForm({
+  title,
+  path,
+  method = "POST",
+  children,
+  prepare,
+  onSuccess,
+}: SaveFormProps) {
   const client = useQueryClient();
   const [key, setKey] = useState(0);
   const mutation = useMutation({
