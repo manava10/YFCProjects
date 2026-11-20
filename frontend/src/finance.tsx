@@ -1016,8 +1016,134 @@ export function Preparation() {
               </Field>
             </SaveForm>
           )}
+          {status === "READY" && Boolean(val(q.data, "ledger_posted")) && (
+            <AllocationSection
+              id={id}
+              kind={String(val(q.data, "kind") ?? "")}
+              outstanding={Number(val(q.data, "outstanding_amount") ?? 0)}
+            />
+          )}
         </div>
       )}
     </>
+  );
+}
+
+function AllocationSection({
+  id,
+  kind,
+  outstanding,
+}: {
+  id: string;
+  kind: string;
+  outstanding: number;
+}) {
+  const [reversing, setReversing] = useState<string | null>(null);
+  const expectedVoucherKind =
+    kind === "SALES_ORDER" ? "CUSTOMER_RECEIPT" : "SUPPLIER_PAYMENT";
+  const list = useQuery({
+    queryKey: ["allocations", id],
+    queryFn: () =>
+      request<RecordData[]>(
+        `/api/v1/accounting/allocations?preparationId=${encodeURIComponent(id)}&size=100`,
+      ),
+  });
+  return (
+    <div style={{ marginTop: "1.5rem" }}>
+      <h3>Payment allocations</h3>
+      <ErrorBox error={list.error} />
+      {list.data && list.data.length > 0 ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Voucher</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Note</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.data.map((r) => (
+                <tr key={String(r.id)}>
+                  <td>{String(r.voucher_reference ?? short(r.voucher_id))}</td>
+                  <td>{money(r.amount)}</td>
+                  <td>
+                    <span className={`badge ${String(r.status).toLowerCase()}`}>
+                      {String(r.status)}
+                    </span>
+                  </td>
+                  <td>{String(r.note ?? "—")}</td>
+                  <td>
+                    {r.status === "ACTIVE" ? (
+                      <button
+                        className="secondary"
+                        type="button"
+                        onClick={() => setReversing(String(r.id))}
+                      >
+                        Reverse
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="muted">No payment allocations recorded against this bill yet.</p>
+      )}
+      {reversing && (
+        <ReasonForm
+          path={`/api/v1/accounting/allocations/${reversing}/reverse`}
+          submitLabel="Reverse allocation"
+          onDone={() => setReversing(null)}
+        />
+      )}
+      {outstanding > 0 && (
+        <SaveForm
+          title="Allocate a posted receipt or payment"
+          path="/api/v1/accounting/allocations"
+        >
+          <input type="hidden" name="preparationId" value={id} />
+          <IdField name="allocationId" caption="Allocation id" />
+          <div className="form-grid">
+            <Field label="Posted voucher">
+              <select name="voucherId" required>
+                <Choices
+                  path="/api/v1/accounting/money-vouchers"
+                  empty="Select posted voucher"
+                  filter={(row) =>
+                    row.effective_status === "POSTED" &&
+                    row.kind === expectedVoucherKind &&
+                    Number(row.unallocated_amount ?? 0) > 0
+                  }
+                  labelOf={(row) =>
+                    `${row.reference} · unallocated ${money(row.unallocated_amount)}`
+                  }
+                />
+              </select>
+            </Field>
+            <Field label="Amount (INR)">
+              <input
+                name="amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={outstanding}
+                defaultValue={outstanding.toFixed(2)}
+                required
+              />
+            </Field>
+          </div>
+          <Field label="Note (optional)">
+            <input name="note" maxLength={1000} />
+          </Field>
+        </SaveForm>
+      )}
+    </div>
   );
 }

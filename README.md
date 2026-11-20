@@ -1,8 +1,8 @@
 # YFC Transport ERP
 
-Spring Boot modular-monolith backend for YFC's material supply and owned-fleet business. Database-backed user administration, session authentication, password reset and audit history are implemented. Branches, customer projects/sites, supplier plants and material masters are also implemented. Frontend work is separate and not part of this backend phase.
+Spring Boot modular-monolith backend and React 19 + Vite frontend for YFC's material supply and owned-fleet business. Database-backed user administration, session authentication, password reset, audit history, branches, customer projects/sites, supplier plants, material masters, sales, inventory, fleet/trips, fuel/expenses, accounting/billing, private documents, public site, and external portals are implemented.
 
-See [backend setup and API examples](backend/README.md) and [scope and next milestones](docs/backend-roadmap.md).
+See the [implementation overview](docs/implementation.md), [backend setup and API examples](backend/README.md), [frontend setup](frontend/README.md), and [scope and next milestones](docs/backend-roadmap.md).
 
 ## Confirmed business rules
 
@@ -11,7 +11,7 @@ See [backend setup and API examples](backend/README.md) and [scope and next mile
 - Billing quantity is agreed ordered quantity: 100 ordered, 99 loaded, 98 received still means 100 billable.
 - YFC bears diesel and toll costs. Customer bears loading/unloading; supplier bears royalty.
 - Customer GSTIN is optional at enquiry/customer creation. On a bill, the accountant types the GST rate; it is not a fixed rate in the software. Supplier bills use the loaded quantity. There is no TDS and no opening-balance import.
-- Balanced journal posting and recorded money vouchers are implemented. A READY bill can be given GST and then posted to the party ledger, including the tax the accountant entered. Invoice-to-payment allocation and government e-invoice filing remain pending.
+- Balanced journal posting, recorded money vouchers, and invoice-to-payment allocations are implemented. A READY bill can be given GST, posted to the party ledger, and settled against posted customer receipts or supplier payments. Government e-invoice filing remains pending.
 - Customers, suppliers and drivers can request a login. An administrator or an operations user approves it. After that they see only their own records.
 
 Local setup: [prepared environment and startup scripts](docs/local-environment.md). Business records: [API examples](docs/business-masters.md).

@@ -236,6 +236,16 @@ class MoneyService {
     result.put("reversals", reversals);
     boolean reversed = reversals.stream().anyMatch(row -> "POSTED".equals(row.get("status")));
     result.put("effective_status", reversed ? "REVERSED" : journal.get("status"));
+    BigDecimal amount = ((BigDecimal) result.get("amount")).setScale(2, java.math.RoundingMode.HALF_UP);
+    BigDecimal allocated =
+        db.queryForObject(
+                "select coalesce(sum(amount),0) from invoice_allocations where voucher_id=? and"
+                    + " status='ACTIVE'",
+                BigDecimal.class,
+                id)
+            .setScale(2, java.math.RoundingMode.HALF_UP);
+    result.put("allocated_amount", allocated);
+    result.put("unallocated_amount", amount.subtract(allocated));
     result.put("currency", "INR");
     result.put("bank_transfer_executed_by_system", false);
     return result;
@@ -247,7 +257,11 @@ class MoneyService {
             "select"
                 + " v.id,v.profile_id,v.money_account_id,v.kind,v.amount,v.reference,v.evidence_reference,v.created_by,v.created_at,j.status,j.number,j.entry_date,j.branch_id,case"
                 + " when exists(select 1 from journals r where r.reverses_id=j.id and"
-                + " r.status='POSTED') then 'REVERSED' else j.status end as effective_status from"
+                + " r.status='POSTED') then 'REVERSED' else j.status end as effective_status,"
+                + " coalesce((select sum(a.amount) from invoice_allocations a where a.voucher_id=v.id"
+                + " and a.status='ACTIVE'),0) as allocated_amount,"
+                + " v.amount - coalesce((select sum(a.amount) from invoice_allocations a where"
+                + " a.voucher_id=v.id and a.status='ACTIVE'),0) as unallocated_amount from"
                 + " money_vouchers v join journals j on j.id=v.id order by v.created_at,v.id limit"
                 + " ? offset ?",
             size,

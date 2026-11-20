@@ -145,5 +145,6 @@ export async function collect(path: string): Promise<RecordData[]> {
       if (content.length < 100) return rows;
     } else if (page + 1 >= (result.totalPages ?? 0)) return rows;
   }
+  console.warn(`collect(${path}) reached the 5,000-row cap; results may be truncated.`);
   return rows;
 }

@@ -35,7 +35,8 @@ class PortalController {
 
   @GetMapping
   Map<String, Object> home() {
-    String username = SecurityContextHolder.getContext().getAuthentication().getName();
+    var auth = SecurityContextHolder.getContext().getAuthentication();
+    String username = auth.getName();
     UUID accountId = accounts.idOf(username);
     var links =
         db.queryForList("select role,record_id from account_ownership where account_id=?", accountId);
@@ -43,6 +44,11 @@ class PortalController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No records are linked to this login");
     var link = norm(links.getFirst());
     String role = (String) link.get("role");
+    boolean roleMatches =
+        auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_" + role));
+    if (!roleMatches)
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN, "Account role no longer matches linked portal record");
     UUID record = (UUID) link.get("record_id");
     var result = new LinkedHashMap<String, Object>();
     result.put("role", role);
@@ -109,7 +115,12 @@ class PortalController {
 
   private List<Map<String, Object>> bills(UUID party, String kind) {
     return rows(
-        "select p.id,p.kind,p.prepared_on,p.subtotal,p.status,t.invoice_number,t.payable_total from"
+        "select p.id,p.kind,p.prepared_on,p.subtotal,p.status,t.invoice_number,t.payable_total,"
+            + " coalesce((select sum(a.amount) from invoice_allocations a where"
+            + " a.preparation_id=p.id and a.status='ACTIVE'),0) as allocated_amount,"
+            + " case when t.payable_total is null then null else t.payable_total -"
+            + " coalesce((select sum(a.amount) from invoice_allocations a where"
+            + " a.preparation_id=p.id and a.status='ACTIVE'),0) end as outstanding_amount from"
             + " billing_preparations p left join billing_tax_assessments t on"
             + " t.preparation_id=p.id where p.party_id=? and p.kind=? and p.status='READY' order by"
             + " p.prepared_on desc,p.id"

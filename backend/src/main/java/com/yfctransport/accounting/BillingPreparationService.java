@@ -119,7 +119,23 @@ class BillingPreparationService {
       result.put("sgst_amount", assessed.get("sgst_amount"));
       result.put("igst_amount", assessed.get("igst_amount"));
       result.put("tax_total", assessed.get("tax_total"));
-      result.put("payable_total", assessed.get("payable_total"));
+      BigDecimal payable = ((BigDecimal) assessed.get("payable_total")).setScale(2, RoundingMode.HALF_UP);
+      BigDecimal allocated =
+          db.queryForObject(
+                  "select coalesce(sum(amount),0) from invoice_allocations where preparation_id=?"
+                      + " and status='ACTIVE'",
+                  BigDecimal.class,
+                  result.get("id"))
+              .setScale(2, RoundingMode.HALF_UP);
+      BigDecimal outstanding = payable.subtract(allocated);
+      String paymentStatus =
+          outstanding.signum() == 0
+              ? "PAID"
+              : allocated.signum() > 0 ? "PARTIALLY_PAID" : "UNPAID";
+      result.put("payable_total", payable);
+      result.put("allocated_amount", allocated);
+      result.put("outstanding_amount", outstanding);
+      result.put("payment_status", paymentStatus);
       result.put("document_type", sales ? "TAX_INVOICE" : "SUPPLIER_BILL");
     }
     return result;

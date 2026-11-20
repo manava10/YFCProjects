@@ -64,6 +64,7 @@ import {
 import { Overview } from "./overview";
 import { CustomerSignup, PublicSite } from "./public-site";
 import { PublicDesk } from "./site-desk";
+import { ErrorBoundary } from "./error-boundary";
 import "./style.css";
 
 const client = new QueryClient({
@@ -554,9 +555,11 @@ function Login({ error }: { error: unknown }) {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <QueryClientProvider client={client}>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </QueryClientProvider>,
+  <ErrorBoundary>
+    <QueryClientProvider client={client}>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </QueryClientProvider>
+  </ErrorBoundary>,
 );

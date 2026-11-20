@@ -484,6 +484,14 @@ class AccountingService {
     if (db.queryForObject(
             "select count(*) from journals where reversal_claim=?", Integer.class, original)
         > 0) throw conflict("A draft or posted reversal already exists");
+    if (db.queryForObject(
+            "select count(*) from invoice_allocations a left join billing_preparations p on"
+                + " p.id=a.preparation_id where a.status='ACTIVE' and (a.voucher_id=? or"
+                + " p.journal_id=?)",
+            Integer.class,
+            original,
+            original)
+        > 0) throw conflict("Reverse active invoice allocations before reversing this journal");
     var lines =
         db
             .queryForList(

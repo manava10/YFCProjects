@@ -38,7 +38,10 @@ class LoginProtection {
   void failed(String username) {
     String key = name(username);
     if (key.isBlank() || key.length() > 80) return;
-    db.update("insert into login_failures(username,failed_at) values(?,?)", key, java.sql.Timestamp.from(clock.instant()));
+    Instant now = clock.instant();
+    Instant cutoff = now.minusSeconds(WINDOW_MINUTES * 60L);
+    db.update("delete from login_failures where failed_at<?", java.sql.Timestamp.from(cutoff));
+    db.update("insert into login_failures(username,failed_at) values(?,?)", key, java.sql.Timestamp.from(now));
   }
 
   void succeeded(String username) {
