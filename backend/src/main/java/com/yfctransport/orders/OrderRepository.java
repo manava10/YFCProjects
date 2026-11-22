@@ -2,8 +2,10 @@ package com.yfctransport.orders;
 
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-interface OrderRepository extends JpaRepository<SalesOrder, UUID> {
+interface OrderRepository
+    extends JpaRepository<SalesOrder, UUID>, JpaSpecificationExecutor<SalesOrder> {
   java.util.Optional<SalesOrder> findBySourceRfqId(UUID id);
 
   @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)

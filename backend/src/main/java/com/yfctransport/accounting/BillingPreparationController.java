@@ -87,8 +87,10 @@ class BillingPreparationController {
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
       @RequestParam(required = false) Kind kind,
       @RequestParam(required = false) UUID partyId,
-      @RequestParam(required = false) UUID branchId) {
-    return service.list(page, size, kind, partyId, branchId);
+      @RequestParam(required = false) UUID branchId,
+      @RequestParam(required = false) @Size(max = 30) String status,
+      @RequestParam(required = false) @Size(max = 120) String q) {
+    return service.list(page, size, kind, partyId, branchId, status, q);
   }
 
   @GetMapping("/{id}")

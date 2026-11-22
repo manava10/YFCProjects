@@ -92,8 +92,8 @@ class AccountingService {
             "select * from "
                 + table
                 + " order by "
-                + (table.equals("journals") ? "submitted_at" : "created_at")
-                + ",id limit ? offset ?",
+                + (table.equals("journals") ? "submitted_at desc,id desc" : "created_at desc,id desc")
+                + " limit ? offset ?",
             size,
             (long) page * size)
         .stream()

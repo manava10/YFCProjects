@@ -262,8 +262,8 @@ class MoneyService {
                 + " and a.status='ACTIVE'),0) as allocated_amount,"
                 + " v.amount - coalesce((select sum(a.amount) from invoice_allocations a where"
                 + " a.voucher_id=v.id and a.status='ACTIVE'),0) as unallocated_amount from"
-                + " money_vouchers v join journals j on j.id=v.id order by v.created_at,v.id limit"
-                + " ? offset ?",
+                + " money_vouchers v join journals j on j.id=v.id order by v.created_at desc,v.id"
+                + " desc limit ? offset ?",
             size,
             (long) page * size)
         .stream()

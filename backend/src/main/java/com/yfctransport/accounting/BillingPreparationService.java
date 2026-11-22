@@ -350,39 +350,170 @@ class BillingPreparationService {
             .stream()
             .map(this::norm)
             .toList());
+    var branchProfile = branches.profile((UUID) row.get("branch_id"));
+    var branchMap = new LinkedHashMap<String, Object>();
+    branchMap.put("id", branchProfile.id());
+    branchMap.put("code", branchProfile.code());
+    branchMap.put("name", branchProfile.name());
+    branchMap.put("address", branchProfile.address());
+    branchMap.put("city", branchProfile.city());
+    branchMap.put("state", branchProfile.state());
+    branchMap.put("pincode", branchProfile.pincode());
+    branchMap.put("gstin", branchProfile.gstin());
+    branchMap.put("state_code", branchProfile.stateCode());
+    branchMap.put("bank_name", branchProfile.bankName());
+    branchMap.put("bank_account", branchProfile.bankAccount());
+    branchMap.put("bank_ifsc", branchProfile.bankIfsc());
+    result.put("branch", branchMap);
+
+    String partyTable = "SALES_ORDER".equals(row.get("kind")) ? "customers" : "suppliers";
+    var partyRows =
+        db.queryForList(
+            "select gstin, address, mobile from " + partyTable + " where id=?", row.get("party_id"));
+    String partyGstin = null;
+    if (!partyRows.isEmpty()) {
+      var p = norm(partyRows.getFirst());
+      partyGstin = (String) p.get("gstin");
+      result.put("party_gstin", partyGstin);
+      result.put("party_address", p.get("address"));
+      result.put("party_mobile", p.get("mobile"));
+    }
+    String partyStateCode =
+        partyGstin != null && partyGstin.length() >= 2 ? partyGstin.substring(0, 2) : null;
+    result.put("party_state_code", partyStateCode);
+    if (branchProfile.stateCode() != null && partyStateCode != null) {
+      result.put(
+          "suggested_supply",
+          branchProfile.stateCode().equals(partyStateCode) ? "INTRA_STATE" : "INTER_STATE");
+    }
     return result;
   }
 
   @Transactional(readOnly = true)
   List<Map<String, Object>> list(
-      int page, int size, BillingPreparationController.Kind kind, UUID party, UUID branch) {
+      int page,
+      int size,
+      BillingPreparationController.Kind kind,
+      UUID party,
+      UUID branch,
+      String status,
+      String q) {
     var args = new ArrayList<Object>();
     String where = " where 1=1";
     if (kind != null) {
-      where += " and kind=?";
+      where += " and p.kind=?";
       args.add(kind.name());
     }
     if (party != null) {
-      where += " and party_id=?";
+      where += " and p.party_id=?";
       args.add(party);
     }
     if (branch != null) {
-      where += " and branch_id=?";
+      where += " and p.branch_id=?";
       args.add(branch);
+    }
+    if (status != null && !status.isBlank()) {
+      where += " and p.status=?";
+      args.add(status.strip().toUpperCase(Locale.ROOT));
+    }
+    if (q != null && !q.isBlank()) {
+      String like = "%" + q.strip().toLowerCase(Locale.ROOT) + "%";
+      where +=
+          " and (lower(coalesce(p.party_name,'')) like ?"
+              + " or lower(coalesce(p.reference,'')) like ?"
+              + " or lower(coalesce(t.invoice_number,'')) like ?)";
+      args.add(like);
+      args.add(like);
+      args.add(like);
     }
     args.add(size);
     args.add((long) page * size);
     return db
         .queryForList(
-            "select"
-                + " id,kind,source_id,party_id,branch_id,party_name,prepared_on,quantity_basis,reference,evidence_reference,basis_reason,subtotal,status,journal_id,created_by,created_at"
-                + " from billing_preparations"
+            "select p.id,p.kind,p.source_id,p.party_id,p.branch_id,p.party_name,p.prepared_on,"
+                + " p.quantity_basis,p.reference,p.evidence_reference,p.basis_reason,p.subtotal,"
+                + " p.status,p.journal_id,p.created_by,p.created_at,"
+                + " j.status as j_status,"
+                + " case when j.status='POSTED' and not exists(select 1 from journals r where"
+                + " r.reverses_id=j.id and r.status='POSTED') then 1 else 0 end as j_active_posted,"
+                + " t.supply as t_supply,t.invoice_number as t_invoice_number,"
+                + " t.taxable_amount as t_taxable_amount,t.cgst_amount as t_cgst_amount,"
+                + " t.sgst_amount as t_sgst_amount,t.igst_amount as t_igst_amount,"
+                + " t.tax_total as t_tax_total,t.payable_total as t_payable_total,"
+                + " coalesce((select sum(a.amount) from invoice_allocations a where"
+                + " a.preparation_id=p.id and a.status='ACTIVE'),0) as a_allocated"
+                + " from billing_preparations p"
+                + " left join journals j on j.id=p.journal_id"
+                + " left join billing_tax_assessments t on t.preparation_id=p.id"
                 + where
-                + " order by created_at,id limit ? offset ?",
+                + " order by p.created_at desc,p.id desc limit ? offset ?",
             args.toArray())
         .stream()
-        .map(this::view)
+        .map(this::listView)
         .toList();
+  }
+
+  private Map<String, Object> listView(Map<String, Object> raw) {
+    var row = norm(raw);
+    var result = new LinkedHashMap<String, Object>();
+    for (String col :
+        List.of(
+            "id",
+            "kind",
+            "source_id",
+            "party_id",
+            "branch_id",
+            "party_name",
+            "prepared_on",
+            "quantity_basis",
+            "reference",
+            "evidence_reference",
+            "basis_reason",
+            "subtotal",
+            "status",
+            "journal_id",
+            "created_by",
+            "created_at")) {
+      result.put(col, row.get(col));
+    }
+    result.put("currency", "INR");
+    result.put("unit", "TONNE");
+    String jStatus = (String) row.get("j_status");
+    if (result.get("journal_id") != null) result.put("journal_status", jStatus);
+    result.put("ledger_posted", "POSTED".equals(jStatus));
+    boolean blocked =
+        "DRAFT".equals(jStatus)
+            || (row.get("j_active_posted") instanceof Number n && n.intValue() == 1);
+    result.put("gst_editable", "READY".equals(result.get("status")) && !blocked);
+    if (row.get("t_supply") == null) {
+      result.put("tax_treatment", "PENDING_ACCOUNTANT_CONFIGURATION");
+      result.put("invoice_issued", false);
+      result.put("document_type", "BILLING_PREPARATION");
+    } else {
+      boolean sales = "SALES_ORDER".equals(result.get("kind"));
+      BigDecimal payable = ((BigDecimal) row.get("t_payable_total")).setScale(2, RoundingMode.HALF_UP);
+      BigDecimal allocated = ((BigDecimal) row.get("a_allocated")).setScale(2, RoundingMode.HALF_UP);
+      BigDecimal outstanding = payable.subtract(allocated);
+      String paymentStatus =
+          outstanding.signum() == 0
+              ? "PAID"
+              : allocated.signum() > 0 ? "PARTIALLY_PAID" : "UNPAID";
+      result.put("tax_treatment", "ASSESSED");
+      result.put("supply", row.get("t_supply"));
+      result.put("invoice_number", row.get("t_invoice_number"));
+      result.put("invoice_issued", row.get("t_invoice_number") != null);
+      result.put("taxable_amount", row.get("t_taxable_amount"));
+      result.put("cgst_amount", row.get("t_cgst_amount"));
+      result.put("sgst_amount", row.get("t_sgst_amount"));
+      result.put("igst_amount", row.get("t_igst_amount"));
+      result.put("tax_total", row.get("t_tax_total"));
+      result.put("payable_total", payable);
+      result.put("allocated_amount", allocated);
+      result.put("outstanding_amount", outstanding);
+      result.put("payment_status", paymentStatus);
+      result.put("document_type", sales ? "TAX_INVOICE" : "SUPPLIER_BILL");
+    }
+    return result;
   }
 
   Map<String, Object> decide(UUID id, AccountingDtos.Decision r, String action) {
@@ -715,22 +846,55 @@ class BillingPreparationService {
     String invoice = null;
     if (!existing.isEmpty()) invoice = (String) norm(existing.getFirst()).get("invoice_number");
     else if ("SALES_ORDER".equals(row.get("kind"))) {
-      int year = day(row.get("prepared_on")).getYear();
-      var counters =
-          db.queryForList(
-              "select last_number from sales_invoice_counters where calendar_year=? for update",
-              year);
-      int next;
-      if (counters.isEmpty()) {
-        next = 1;
-        db.update(
-            "insert into sales_invoice_counters(calendar_year,last_number) values(?,?)", year, next);
+      int fyStart = indianFinancialYearStart(day(row.get("prepared_on")));
+      String fyCode = indianFinancialYearCode(fyStart);
+      var branchProfile = branches.profile((UUID) row.get("branch_id"));
+      String stateCode = branchProfile.stateCode();
+      if (stateCode != null && !stateCode.isBlank()) {
+        var counters =
+            db.queryForList(
+                "select last_number from state_invoice_counters where state_code=? and fy_start=? for update",
+                stateCode,
+                fyStart);
+        int next;
+        if (counters.isEmpty()) {
+          next = 1;
+          db.update(
+              "insert into state_invoice_counters(state_code,fy_start,last_number) values(?,?,?)",
+              stateCode,
+              fyStart,
+              next);
+        } else {
+          next = ((Number) norm(counters.getFirst()).get("last_number")).intValue() + 1;
+          db.update(
+              "update state_invoice_counters set last_number=? where state_code=? and fy_start=?",
+              next,
+              stateCode,
+              fyStart);
+        }
+        // CGST Rule 46(b): max 16 characters -> e.g. SI-2627-08-00001
+        invoice = "SI-" + fyCode + "-" + stateCode + "-" + String.format("%05d", next);
       } else {
-        next = ((Number) norm(counters.getFirst()).get("last_number")).intValue() + 1;
-        db.update(
-            "update sales_invoice_counters set last_number=? where calendar_year=?", next, year);
+        var counters =
+            db.queryForList(
+                "select last_number from sales_invoice_counters where calendar_year=? for update",
+                fyStart);
+        int next;
+        if (counters.isEmpty()) {
+          next = 1;
+          db.update(
+              "insert into sales_invoice_counters(calendar_year,last_number) values(?,?)",
+              fyStart,
+              next);
+        } else {
+          next = ((Number) norm(counters.getFirst()).get("last_number")).intValue() + 1;
+          db.update(
+              "update sales_invoice_counters set last_number=? where calendar_year=?",
+              next,
+              fyStart);
+        }
+        invoice = "SI-" + fyCode + "-" + String.format("%05d", next);
       }
-      invoice = "SI-" + year + "-" + String.format("%05d", next);
     }
     if (!existing.isEmpty()) {
       db.update("delete from billing_tax_lines where preparation_id=?", id);
@@ -768,6 +932,14 @@ class BillingPreparationService {
     audit.record(
         "BILLING_TAX_ASSESSED", "BILLING_PREPARATION", id, "Supply=" + r.supply().name());
     return get(id);
+  }
+
+  static int indianFinancialYearStart(LocalDate date) {
+    return date.getMonthValue() >= 4 ? date.getYear() : date.getYear() - 1;
+  }
+
+  static String indianFinancialYearCode(int fyStart) {
+    return String.format("%02d%02d", Math.floorMod(fyStart, 100), Math.floorMod(fyStart + 1, 100));
   }
 
   private LocalDate day(Object v) {

@@ -26,7 +26,13 @@ class BranchController {
       @NotBlank @Size(max = 500) String address,
       @NotBlank @Size(max = 100) String city,
       @NotBlank @Size(max = 100) String state,
-      @NotBlank @Pattern(regexp = "[1-9][0-9]{5}") String pincode) {}
+      @NotBlank @Pattern(regexp = "[1-9][0-9]{5}") String pincode,
+      @Pattern(regexp = "[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9][Zz][A-Za-z0-9]")
+          String gstin,
+      @Pattern(regexp = "[0-9]{2}") String stateCode,
+      @Size(max = 160) String bankName,
+      @Size(max = 40) String bankAccount,
+      @Pattern(regexp = "[A-Za-z]{4}0[A-Za-z0-9]{6}") String bankIfsc) {}
 
   record Status(@NotNull Boolean active) {}
 
@@ -38,9 +44,27 @@ class BranchController {
       String city,
       String state,
       String pincode,
+      String gstin,
+      String stateCode,
+      String bankName,
+      String bankAccount,
+      String bankIfsc,
       boolean active) {
     static View of(Branch a) {
-      return new View(a.id, a.code, a.name, a.address, a.city, a.state, a.pincode, a.active);
+      return new View(
+          a.id,
+          a.code,
+          a.name,
+          a.address,
+          a.city,
+          a.state,
+          a.pincode,
+          a.gstin,
+          a.stateCode,
+          a.bankName,
+          a.bankAccount,
+          a.bankIfsc,
+          a.active);
     }
   }
 

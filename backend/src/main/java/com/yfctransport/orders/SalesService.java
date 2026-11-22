@@ -26,6 +26,7 @@ class SalesService {
   private final MaterialRegistry materials;
   private final AuditTrail audit;
   private final Clock clock;
+  private final CustomerCreditCheck creditCheck;
 
   SalesService(
       RfqRepository rfqs,
@@ -37,7 +38,8 @@ class SalesService {
       CustomerLocations locations,
       MaterialRegistry materials,
       AuditTrail audit,
-      Clock clock) {
+      Clock clock,
+      CustomerCreditCheck creditCheck) {
     this.rfqs = rfqs;
     this.rfqItems = rfqItems;
     this.quotations = quotations;
@@ -48,6 +50,7 @@ class SalesService {
     this.materials = materials;
     this.audit = audit;
     this.clock = clock;
+    this.creditCheck = creditCheck;
   }
 
   private ResponseStatusException conflict(String reason) {
@@ -256,7 +259,7 @@ class SalesService {
     q.decisionNote = note;
   }
 
-  SalesDtos.Conversion convert(UUID id) {
+  SalesDtos.Conversion convert(UUID id, boolean overrideCreditLimit) {
     var locked = lockQuote(id);
     var r = locked.rfq();
     var q = locked.quote();
@@ -271,6 +274,11 @@ class SalesService {
     locations.getActive(r.customerId, r.deliverySiteId);
     var lines = quoteItems.findByQuotationIdOrderByPosition(id);
     for (var line : lines) materials.getActive(line.materialId);
+    BigDecimal orderTotal =
+        lines.stream()
+            .map(i -> i.materialAmount.add(i.transportAmount))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    creditCheck.requireWithinLimit(r.customerId, orderTotal, overrideCreditLimit);
     BigDecimal quantity =
         lines.stream().map(i -> i.quantity).reduce(BigDecimal.ZERO, BigDecimal::add);
     String description =

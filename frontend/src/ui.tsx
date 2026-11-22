@@ -1,6 +1,7 @@
 import React, {
   createContext,
   useContext,
+  useEffect,
   useState,
   type FormEvent,
 } from "react";
@@ -254,8 +255,50 @@ export function Pager({
   );
 }
 
+export function useDebounced<T>(value: T, delay = 250): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
+export function queryPath(base: string, params: Record<string, string | undefined>) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v && v.trim()) sp.set(k, v.trim());
+  }
+  const qs = sp.toString();
+  if (!qs) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}${qs}`;
+}
+
+export function FilterBar({
+  children,
+  active,
+  onReset,
+}: {
+  children: React.ReactNode;
+  active?: boolean;
+  onReset?: () => void;
+}) {
+  return (
+    <div className="filter-bar" role="search">
+      {children}
+      {active && onReset && (
+        <button type="button" className="secondary" onClick={onReset}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function usePaged(key: string, path: string) {
-  const [page, setPage] = useState(0);
+  const [state, setState] = useState({ path, page: 0 });
+  const page = state.path === path ? state.page : 0;
+  const setPage = (next: number) => setState({ path, page: next });
   const q = useQuery({
     queryKey: [key, path, page],
     queryFn: () =>
@@ -289,6 +332,7 @@ export function Choices({
   const q = useQuery({
     queryKey: ["directory", path],
     queryFn: () => collect(path),
+    staleTime: 5 * 60_000,
   });
   const feedback = useContext(FieldFeedback);
   const rows = filter ? q.data?.filter(filter) : q.data;
@@ -430,13 +474,9 @@ export function DataTable({
   );
 }
 
-export function IdField({ name, caption }: { name: string; caption: string }) {
+export function IdField({ name }: { name: string; caption?: string }) {
   const [id] = useState(uuid);
-  return (
-    <Field label={caption}>
-      <input name={name} value={id} readOnly />
-    </Field>
-  );
+  return <input type="hidden" name={name} value={id} />;
 }
 
 export function ReasonForm({

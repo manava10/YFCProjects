@@ -28,6 +28,21 @@ class Branch {
   @Column(nullable = false, length = 6)
   String pincode;
 
+  @Column(length = 15)
+  String gstin;
+
+  @Column(name = "state_code", length = 2)
+  String stateCode;
+
+  @Column(name = "bank_name", length = 160)
+  String bankName;
+
+  @Column(name = "bank_account", length = 40)
+  String bankAccount;
+
+  @Column(name = "bank_ifsc", length = 15)
+  String bankIfsc;
+
   @Column(nullable = false)
   boolean active = true;
 

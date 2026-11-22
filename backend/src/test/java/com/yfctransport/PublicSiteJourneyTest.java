@@ -29,6 +29,9 @@ class PublicSiteJourneyTest {
         mvc.perform(get("/api/v1/site").with(anonymous()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.profile.heroTitle").value("Building India."))
+            .andExpect(jsonPath("$.profile.contactPhone").value("+91 96672 89071"))
+            .andExpect(jsonPath("$.profile.whatsappNumber").value("919667289071"))
+            .andExpect(jsonPath("$.profile.trustedClients").value("L&T, Bestech, DLF, Ahluwalia, Emaar"))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -37,25 +40,51 @@ class PublicSiteJourneyTest {
     Map<String, Object> drop = named(site, "destinations", "Gurugram, Haryana");
     assertThat(((Number) material.get("rate")).doubleValue()).isEqualTo(820);
 
+    Map<String, Object> quoteBody =
+        Map.of(
+            "materialId",
+            material.get("id"),
+            "plantId",
+            plant.get("id"),
+            "destinationId",
+            drop.get("id"),
+            "quantity",
+            20,
+            "mediator",
+            "Rajpal");
+    // Anonymous visitors cannot place confirmed orders directly; they submit enquiries instead
+    mvc.perform(
+            post("/api/v1/site/quotes")
+                .with(anonymous())
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(quoteBody)))
+        .andExpect(status().isUnauthorized());
+
+    mvc.perform(
+            post("/api/v1/site/enquiries")
+                .with(anonymous())
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "name",
+                            "Asha Builders",
+                            "phone",
+                            "9876543210",
+                            "note",
+                            "Estimate: 20 MM Aggregate, 20 ton"))))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.reference").isNotEmpty());
+
     String quote =
         mvc.perform(
                 post("/api/v1/site/quotes")
-                    .with(anonymous())
+                    .with(user("ops").roles("OPERATIONS"))
                     .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(
-                        json.writeValueAsString(
-                            Map.of(
-                                "materialId",
-                                material.get("id"),
-                                "plantId",
-                                plant.get("id"),
-                                "destinationId",
-                                drop.get("id"),
-                                "quantity",
-                                20,
-                                "mediator",
-                                "Rajpal"))))
+                    .content(json.writeValueAsString(quoteBody)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.stage").value("CONFIRMED"))
             .andExpect(jsonPath("$.freightRate").value(420))

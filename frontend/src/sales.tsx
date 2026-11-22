@@ -10,12 +10,15 @@ import {
   ErrorBox,
   Facts,
   Field,
+  FilterBar,
   Heading,
   Notice,
   Pager,
+  queryPath,
   SaveForm,
   Status,
   useAccess,
+  useDebounced,
   usePaged,
 } from "./ui";
 
@@ -299,7 +302,7 @@ export function NewEnquiry() {
 }
 
 export function Enquiry() {
-  const write = useAccess().write;
+  const { write, admin } = useAccess();
   const { id } = useParams();
   const client = useQueryClient();
   const nav = useNavigate();
@@ -516,14 +519,31 @@ export function Enquiry() {
                       </>
                     )}
                     {write && quote.status === "ACCEPTED" && !quote.convertedOrderId && (
-                      <button
-                        disabled={mutation.isPending}
-                        onClick={() =>
-                          mutation.mutate({ path: `/api/v1/quotations/${quote.id}/convert` })
-                        }
-                      >
-                        Convert to order <ArrowUpRight size={16} />
-                      </button>
+                      <>
+                        <button
+                          disabled={mutation.isPending}
+                          onClick={() =>
+                            mutation.mutate({ path: `/api/v1/quotations/${quote.id}/convert` })
+                          }
+                        >
+                          Convert to order <ArrowUpRight size={16} />
+                        </button>
+                        {admin &&
+                          mutation.error instanceof Error &&
+                          mutation.error.message.toLowerCase().includes("credit limit") && (
+                            <button
+                              className="secondary"
+                              disabled={mutation.isPending}
+                              onClick={() =>
+                                mutation.mutate({
+                                  path: `/api/v1/quotations/${quote.id}/convert?overrideCreditLimit=true`,
+                                })
+                              }
+                            >
+                              Override credit limit &amp; convert (Super Admin)
+                            </button>
+                          )}
+                      </>
                     )}
                     {quote.convertedOrderId && (
                       <Link className="button secondary" to={`/orders/${quote.convertedOrderId}`}>
@@ -584,7 +604,18 @@ export function Orders() {
   const write = useAccess().write;
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState("MATERIAL_AND_TRANSPORT");
-  const { page, setPage, q, items, total, hasNext } = usePaged("orders", "/api/v1/orders");
+  const [search, setSearch] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const debouncedSearch = useDebounced(search);
+  const { page, setPage, q, items, total, hasNext } = usePaged(
+    "orders",
+    queryPath("/api/v1/orders", {
+      q: debouncedSearch,
+      branchId: branchFilter,
+      businessType: typeFilter,
+    }),
+  );
   return (
     <>
       <Heading
@@ -661,6 +692,39 @@ export function Orders() {
       )}
       <ErrorBox error={q.error} />
       <div className="panel">
+        <FilterBar
+          active={!!(search || branchFilter || typeFilter)}
+          onReset={() => {
+            setSearch("");
+            setBranchFilter("");
+            setTypeFilter("");
+          }}
+        >
+          <input
+            type="search"
+            aria-label="Search orders"
+            placeholder="Search material or delivery site…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <select
+            aria-label="Filter orders by branch"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            <Choices path="/api/v1/branches" empty="All branches" />
+          </select>
+          <select
+            aria-label="Filter orders by type"
+            value={typeFilter}
+            onChange={(event) => setTypeFilter(event.target.value)}
+          >
+            <option value="">All order types</option>
+            <option value="MATERIAL_AND_TRANSPORT">Material &amp; transport</option>
+            <option value="MATERIAL">Material only</option>
+            <option value="TRANSPORT">Transport only</option>
+          </select>
+        </FilterBar>
         {q.isPending ? (
           <p className="empty">Loading orders…</p>
         ) : items.length ? (

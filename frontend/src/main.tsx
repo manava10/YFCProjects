@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
@@ -8,6 +8,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import {
   QueryClient,
@@ -16,6 +17,7 @@ import {
 } from "@tanstack/react-query";
 import {
   ArrowUpRight,
+  Bell,
   ClipboardList,
   ChevronRight,
   Fuel,
@@ -25,50 +27,63 @@ import {
   LogOut,
   Package,
   ScrollText,
+  Search,
   Shield,
   Truck,
   Users,
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
+import { CommandPalette } from "./command-palette";
 import { ApiError, login, logout, request } from "./api";
-import { Audit, People, ResetPassword } from "./admin";
-import { AccountRequests, ExternalHome, Join } from "./portal";
-import {
-  Billing,
-  Journal,
-  Ledger,
-  Money,
-  Parties,
-  Preparation,
-} from "./finance";
-import { Fleet, Trip, Trips } from "./fleet";
-import { Branches, Customers, Materials, Suppliers } from "./masters";
-import { Operating } from "./operating";
-import { Enquiry, NewEnquiry, Order, Orders, Sales } from "./sales";
-import {
-  Purchase,
-  Purchases,
-  Reservations,
-  StockControl,
-  Yards,
-} from "./supply";
 import {
   AccessContext,
   ErrorBox,
   Field,
-  Heading,
   PasswordInput,
   type Access,
 } from "./ui";
-import { Overview } from "./overview";
-import { CustomerSignup, PublicSite } from "./public-site";
-import { PublicDesk } from "./site-desk";
 import { ErrorBoundary } from "./error-boundary";
+import { CustomerLogin, CustomerSignup, PublicSite } from "./public-site";
 import "./style.css";
 
+const Audit = lazy(() => import("./admin").then((m) => ({ default: m.Audit })));
+const People = lazy(() => import("./admin").then((m) => ({ default: m.People })));
+const ResetPassword = lazy(() => import("./admin").then((m) => ({ default: m.ResetPassword })));
+const AccountRequests = lazy(() => import("./portal").then((m) => ({ default: m.AccountRequests })));
+const ExternalHome = lazy(() => import("./portal").then((m) => ({ default: m.ExternalHome })));
+const Billing = lazy(() => import("./finance").then((m) => ({ default: m.Billing })));
+const Journal = lazy(() => import("./finance").then((m) => ({ default: m.Journal })));
+const Ledger = lazy(() => import("./finance").then((m) => ({ default: m.Ledger })));
+const Money = lazy(() => import("./finance").then((m) => ({ default: m.Money })));
+const Parties = lazy(() => import("./finance").then((m) => ({ default: m.Parties })));
+const Preparation = lazy(() => import("./finance").then((m) => ({ default: m.Preparation })));
+const Fleet = lazy(() => import("./fleet").then((m) => ({ default: m.Fleet })));
+const Trip = lazy(() => import("./fleet").then((m) => ({ default: m.Trip })));
+const Trips = lazy(() => import("./fleet").then((m) => ({ default: m.Trips })));
+const Branches = lazy(() => import("./masters").then((m) => ({ default: m.Branches })));
+const Customers = lazy(() => import("./masters").then((m) => ({ default: m.Customers })));
+const Materials = lazy(() => import("./masters").then((m) => ({ default: m.Materials })));
+const Suppliers = lazy(() => import("./masters").then((m) => ({ default: m.Suppliers })));
+const Operating = lazy(() => import("./operating").then((m) => ({ default: m.Operating })));
+const Enquiry = lazy(() => import("./sales").then((m) => ({ default: m.Enquiry })));
+const NewEnquiry = lazy(() => import("./sales").then((m) => ({ default: m.NewEnquiry })));
+const Order = lazy(() => import("./sales").then((m) => ({ default: m.Order })));
+const Orders = lazy(() => import("./sales").then((m) => ({ default: m.Orders })));
+const Sales = lazy(() => import("./sales").then((m) => ({ default: m.Sales })));
+const Purchase = lazy(() => import("./supply").then((m) => ({ default: m.Purchase })));
+const Purchases = lazy(() => import("./supply").then((m) => ({ default: m.Purchases })));
+const Reservations = lazy(() => import("./supply").then((m) => ({ default: m.Reservations })));
+const StockControl = lazy(() => import("./supply").then((m) => ({ default: m.StockControl })));
+const Yards = lazy(() => import("./supply").then((m) => ({ default: m.Yards })));
+const Overview = lazy(() => import("./overview").then((m) => ({ default: m.Overview })));
+const AlertsCenter = lazy(() => import("./alerts").then((m) => ({ default: m.AlertsCenter })));
+const PublicDesk = lazy(() => import("./site-desk").then((m) => ({ default: m.PublicDesk })));
+
 const client = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: { retry: false, refetchOnWindowFocus: false, staleTime: 30_000 },
+  },
 });
 
 type Item = {
@@ -81,6 +96,19 @@ type Item = {
 
 function App() {
   const path = useLocation().pathname;
+  const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [signOutError, setSignOutError] = useState<unknown>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const session = useQuery({
     enabled: path !== "/" && path !== "/signup",
     queryKey: ["session"],
@@ -101,19 +129,51 @@ function App() {
     document.title =
       path === "/"
         ? "YFC Transport | Material Supply & Transport"
-        : path === "/signup"
-          ? "YFC Transport | Customer sign up"
-          : "YFC · Staff workspace";
+        : path === "/signup" || path === "/join"
+          ? "YFC Transport | Register Account"
+          : path === "/signin"
+            ? "YFC Transport | Customer & Partner Login"
+            : path === "/portal"
+              ? "YFC Transport | Customer Portal"
+              : "YFC · Staff ERP Workspace";
   }, [path]);
   if (path === "/") return <PublicSite />;
   if (path === "/signup") return <CustomerSignup />;
+  if (path === "/join") return <Navigate to="/signup?role=SUPPLIER" replace />;
   if (path === "/reset") return <ResetPassword />;
-  if (path === "/join") return <Join />;
+
+  const sessionRoles = session.data?.roles ?? [];
+  const isExternalSession = sessionRoles.some((r) =>
+    ["ROLE_CUSTOMER", "ROLE_SUPPLIER", "ROLE_DRIVER"].includes(r),
+  );
+  const isStaffSession = sessionRoles.some((r) =>
+    ["ROLE_SUPER_ADMIN", "ROLE_OPERATIONS", "ROLE_ACCOUNTS"].includes(r),
+  );
+
+  if (path === "/signin") {
+    if (isExternalSession) return <Navigate to="/portal" replace />;
+    return (
+      <CustomerLogin
+        signedInStaff={isStaffSession ? session.data?.username : null}
+        onSignedIn={async () => {
+          await client.refetchQueries({ queryKey: ["session"] });
+        }}
+        onSignOut={async () => {
+          client.removeQueries({
+            predicate: (query) => query.queryKey[0] !== "session",
+          });
+          client.setQueryData(["session"], null);
+        }}
+      />
+    );
+  }
+
   if (session.isPending)
     return <div className="loading">Opening your workspace…</div>;
   if (!session.data) {
+    if (path === "/portal") return <Navigate to="/signin" replace />;
     return (
-      <Login
+      <StaffLogin
         error={
           session.error instanceof ApiError && session.error.status === 401
             ? null
@@ -142,6 +202,7 @@ function App() {
     ),
   };
   if (access.customer || access.supplier || access.driver) {
+    if (path !== "/portal") return <Navigate to="/portal" replace />;
     return <ExternalHome username={session.data.username} />;
   }
   if (!access.admin && !access.operations && !access.accounts) {
@@ -176,6 +237,12 @@ function App() {
           label: "Overview",
           icon: Layers3,
           end: true,
+          show: true,
+        },
+        {
+          to: "/alerts",
+          label: "Alerts & digest",
+          icon: Bell,
           show: true,
         },
       ],
@@ -267,19 +334,53 @@ function App() {
       ],
     },
   ];
+  const commandItems = [
+    ...sections.flatMap((section) =>
+      section.items
+        .filter((item) => item.show)
+        .map((item) => ({
+          to: item.to,
+          label: item.label,
+          section: section.label,
+          icon: item.icon,
+        })),
+    ),
+    ...(access.write
+      ? [
+          {
+            to: "/sales/new",
+            label: "New customer enquiry (RFQ)",
+            section: "Quick action",
+            icon: ClipboardList,
+          },
+        ]
+      : []),
+  ];
   return (
     <AccessContext.Provider value={access}>
+      <CommandPalette
+        items={commandItems}
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+      />
       <div className="shell">
         <aside>
           <Link className="brand" to="/">
             <span className="brandmark">Y</span>
             <span>
-              YFC<span className="brand-sub">TRANSPORT & MATERIALS</span>
+              YFC<span className="brand-sub">TRANSPORT ERP</span>
             </span>
           </Link>
-          <div className="workspace-tag">
-            <span className="live-dot" /> Internal workspace
-          </div>
+          <button
+            type="button"
+            className="cmd-trigger"
+            onClick={() => setPaletteOpen(true)}
+          >
+            <span className="cmd-trigger-left">
+              <Search size={14} /> Jump to…
+            </span>
+            <kbd>⌘K</kbd>
+          </button>
           <div className="nav-scroll">
             {sections.map((section) =>
               section.items.some((item) => item.show) ? (
@@ -315,16 +416,16 @@ function App() {
               className="icon-button"
               aria-label="Sign out"
               onClick={async () => {
+                setSignOutError(null);
                 try {
                   await logout();
                   client.removeQueries({
                     predicate: (query) => query.queryKey[0] !== "session",
                   });
                   client.setQueryData(["session"], null);
+                  navigate("/staff", { replace: true });
                 } catch (error) {
-                  window.alert(
-                    error instanceof Error ? error.message : "Sign out failed",
-                  );
+                  setSignOutError(error);
                 }
               }}
             >
@@ -334,19 +435,24 @@ function App() {
         </aside>
         <div className="body">
           <header>
-            <span>
-              YFC workspace <ChevronRight size={14} /> {crumb(path)}
+            <span className="header-crumb">
+              YFC ERP <ChevronRight size={14} /> <strong>{crumb(path)}</strong>
             </span>
-            <span className="header-date">
-              {new Intl.DateTimeFormat("en-IN", {
-                dateStyle: "medium",
-                timeZone: "Asia/Kolkata",
-              }).format(new Date())}
+            <span className="header-right">
+              <span className="header-date">
+                {new Intl.DateTimeFormat("en-IN", {
+                  dateStyle: "medium",
+                  timeZone: "Asia/Kolkata",
+                }).format(new Date())}
+              </span>
             </span>
           </header>
           <main>
+            <ErrorBox error={signOutError} />
+            <Suspense fallback={<div className="panel-loading">Loading view…</div>}>
             <Routes>
               <Route path="/dashboard" element={<Overview access={access} />} />
+              <Route path="/alerts" element={<AlertsCenter />} />
               <Route
                 path="/staff"
                 element={<Navigate to="/dashboard" replace />}
@@ -451,6 +557,7 @@ function App() {
               />
               <Route path="*" element={<Navigate to="/dashboard" />} />
             </Routes>
+            </Suspense>
           </main>
           <footer>
             YFC Transport <span>Internal operations workspace</span>
@@ -465,6 +572,7 @@ function crumb(path: string) {
   const [first] = path.split("/").filter(Boolean);
   return (
     {
+      alerts: "Alerts & digest",
       sales: "Sales",
       orders: "Orders",
       customers: "Customers",
@@ -491,14 +599,19 @@ function crumb(path: string) {
   );
 }
 
-function Login({ error }: { error: unknown }) {
+function StaffLogin({ error }: { error: unknown }) {
   const [failure, setFailure] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   return (
     <div className="login-layout">
       <section>
-        <div className="brand">YFC / TRANSPORT</div>
-        <p className="eyebrow">YOUR OPERATIONS, CONNECTED</p>
+        <Link className="brand" to="/">
+          <span className="brandmark">Y</span>
+          <span>
+            YFC<span className="brand-sub">TRANSPORT ERP</span>
+          </span>
+        </Link>
+        <p className="eyebrow" style={{ color: "#93c5fd" }}>INTERNAL OFFICE WORKSPACE</p>
         <h1>
           Every order.
           <br />
@@ -507,8 +620,8 @@ function Login({ error }: { error: unknown }) {
           <em>One workspace.</em>
         </h1>
         <p>
-          Material supply, fleet movement and the books, in one internal
-          workspace.
+          Material supply, fleet movement, billing, and accounting for YFC
+          operations and finance teams.
         </p>
       </section>
       <form
@@ -522,8 +635,9 @@ function Login({ error }: { error: unknown }) {
             await login(
               String(form.get("username")),
               String(form.get("password")),
+              "STAFF",
             );
-            await client.invalidateQueries({ queryKey: ["session"] });
+            await client.refetchQueries({ queryKey: ["session"] });
           } catch (caught) {
             setFailure(caught);
           } finally {
@@ -531,21 +645,21 @@ function Login({ error }: { error: unknown }) {
           }
         }}
       >
-        <p className="eyebrow">WELCOME TO YFC</p>
-        <h2>Sign in to your workspace</h2>
-        <p>Customers, suppliers, drivers, and the office sign in here.</p>
+        <p className="eyebrow">STAFF ERP LOGIN</p>
+        <h2>Sign in to the office workspace</h2>
+        <p>Administrators, operations, and accounts staff sign in here.</p>
         <ErrorBox error={failure || error} />
-        <Field label="Username">
+        <Field label="Staff Username">
           <input name="username" autoComplete="username" required />
         </Field>
         <Field label="Password">
           <PasswordInput name="password" autoComplete="current-password" />
         </Field>
         <button disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"} <ArrowUpRight size={16} />
+          {busy ? "Signing in…" : "Sign in to Staff ERP"} <ArrowUpRight size={16} />
         </button>
         <small>
-          <Link to="/join">Request a customer, supplier or driver account</Link>
+          <Link to="/signin">Customer or partner? Customer Portal Login →</Link>
           <br />
           <Link to="/reset">Have a password reset token?</Link>
         </small>
@@ -558,7 +672,9 @@ createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
     <QueryClientProvider client={client}>
       <BrowserRouter>
-        <App />
+        <Suspense fallback={<div className="loading">Loading workspace…</div>}>
+          <App />
+        </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   </ErrorBoundary>,

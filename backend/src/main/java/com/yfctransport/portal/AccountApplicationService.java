@@ -152,7 +152,11 @@ class AccountApplicationService {
             > 0)
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Username is already in use");
     if (gstin != null
-        && (db.queryForObject("select count(*) from suppliers where gstin=?", Integer.class, gstin)
+        && (db.queryForObject(
+                    "select count(*) from suppliers s join account_ownership o on"
+                        + " o.record_id=s.id and o.role='SUPPLIER' where s.gstin=?",
+                    Integer.class,
+                    gstin)
                 > 0
             || db.queryForObject(
                     "select count(*) from account_applications where gstin=? and status='PENDING'",
@@ -160,10 +164,13 @@ class AccountApplicationService {
                     gstin)
                 > 0))
       throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "This GSTIN already has a supplier or a pending application");
+          HttpStatus.CONFLICT, "This GSTIN already has a portal login or a pending application");
     if (license != null
         && (db.queryForObject(
-                    "select count(*) from drivers where license_number=?", Integer.class, license)
+                    "select count(*) from drivers d join account_ownership o on"
+                        + " o.record_id=d.id and o.role='DRIVER' where d.license_number=?",
+                    Integer.class,
+                    license)
                 > 0
             || db.queryForObject(
                     "select count(*) from account_applications where license_number=? and"
@@ -172,7 +179,8 @@ class AccountApplicationService {
                     license)
                 > 0))
       throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "This licence number already has a driver or a pending application");
+          HttpStatus.CONFLICT,
+          "This licence number already has a portal login or a pending application");
     db.update(
         "insert into account_applications(id,role,username,requested_username,display_name,mobile,"
             + " password_hash,gstin,address,email,license_number,license_expiry,emergency_contact,emergency_mobile,create_payload)"
@@ -231,14 +239,16 @@ class AccountApplicationService {
             .getAuthentication()
             .getName();
     UUID branch = r.branchId();
+    UUID existingRecord = r.existingRecordId();
     if (row.get("decision_event_id") != null) {
       if (!r.eventId().equals(row.get("decision_event_id"))
           || !reason.equals(row.get("decision_reason"))
           || !actor.equals(row.get("decided_by"))
           || (approve && !"APPROVED".equals(row.get("status")))
           || (!approve && !"REJECTED".equals(row.get("status")))
+          || (approve && existingRecord != null && !existingRecord.equals(row.get("record_id")))
           || (approve && branch != null && !branch.equals(row.get("branch_id")))
-          || (approve && branch == null && row.get("branch_id") != null))
+          || (approve && existingRecord == null && branch == null && row.get("branch_id") != null))
         throw new ResponseStatusException(
             HttpStatus.CONFLICT, "Decision ID used with different details");
       var result = view(row);
@@ -252,9 +262,45 @@ class AccountApplicationService {
     UUID account = null;
     if (approve) {
       String role = (String) row.get("role");
-      if (role.equals("DRIVER")) {
+      if (existingRecord != null) {
+        if (branch != null)
+          throw new IllegalArgumentException(
+              "Do not specify a branch when linking an existing record");
+        if (db.queryForObject(
+                "select count(*) from account_ownership where role=? and record_id=?",
+                Integer.class,
+                role,
+                existingRecord)
+            > 0)
+          throw new ResponseStatusException(
+              HttpStatus.CONFLICT, "This record already has a portal login");
+        if (role.equals("CUSTOMER")) {
+          if (db.queryForObject(
+                  "select count(*) from customers where id=?", Integer.class, existingRecord)
+              == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not found");
+        } else if (role.equals("SUPPLIER")) {
+          if (db.queryForObject(
+                  "select count(*) from suppliers where id=?", Integer.class, existingRecord)
+              == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Supplier not found");
+        } else {
+          var found =
+              db.queryForList("select branch_id from drivers where id=?", existingRecord);
+          if (found.isEmpty())
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Driver not found");
+          branch = (UUID) norm(found.getFirst()).get("branch_id");
+        }
+        record = existingRecord;
+      } else if (role.equals("DRIVER")) {
         if (branch == null)
           throw new IllegalArgumentException("Choose the driver's branch before approving");
+        if (db.queryForObject(
+                "select count(*) from drivers where license_number=?",
+                Integer.class,
+                row.get("license_number"))
+            > 0)
+          throw new ResponseStatusException(
+              HttpStatus.CONFLICT,
+              "A driver with this licence already exists; link the existing driver record instead");
         branches.requireActive(branch);
         record =
             drivers.open(
@@ -274,7 +320,14 @@ class AccountApplicationService {
                 (String) row.get("mobile"),
                 (String) row.get("gstin"),
                 (String) row.get("address"));
-      else
+      else {
+        if (db.queryForObject(
+                "select count(*) from suppliers where gstin=?", Integer.class, row.get("gstin"))
+            > 0)
+          throw new ResponseStatusException(
+              HttpStatus.CONFLICT,
+              "A supplier with this GSTIN already exists; link the existing supplier record"
+                  + " instead");
         record =
             suppliers.open(
                 (String) row.get("display_name"),
@@ -282,6 +335,7 @@ class AccountApplicationService {
                 (String) row.get("mobile"),
                 (String) row.get("email"),
                 (String) row.get("address"));
+      }
       account =
           accounts.openHashed(
               (String) row.get("username"),
@@ -293,8 +347,9 @@ class AccountApplicationService {
           account,
           role,
           record);
-    } else if (branch != null)
-      throw new IllegalArgumentException("A branch is recorded only when approving a driver");
+    } else if (branch != null || existingRecord != null)
+      throw new IllegalArgumentException(
+          "Branch or existing record is recorded only when approving an application");
     String username = (String) row.get("username");
     if (!approve) {
       String suffix = "-" + id.toString().substring(0, 8);

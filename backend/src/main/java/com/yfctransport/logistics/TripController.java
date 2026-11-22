@@ -33,8 +33,24 @@ class TripController {
   @GetMapping
   List<Map<String, Object>> list(
       @RequestParam(defaultValue = "0") @Min(0) int page,
-      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-    return trips.list(page, size);
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+      @RequestParam(required = false) @Size(max = 120) String q,
+      @RequestParam(required = false) @Size(max = 30) String status,
+      @RequestParam(required = false) TripDtos.Source source,
+      @RequestParam(required = false) UUID branchId) {
+    return trips.list(page, size, q, status, source, branchId);
+  }
+
+  @GetMapping("/eway-bill-alerts")
+  List<Map<String, Object>> ewayBillAlerts(
+      @RequestParam(defaultValue = "24") @Min(1) @Max(720) int hours) {
+    return trips.ewayBillAlerts(hours);
+  }
+
+  @PutMapping("/{id}/eway-bill")
+  @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
+  Map<String, Object> ewayBill(@PathVariable UUID id, @Valid @RequestBody TripDtos.EwayBill r) {
+    return trips.updateEwayBill(id, r);
   }
 
   @PostMapping("/{id}/start-loading")
@@ -51,8 +67,11 @@ class TripController {
 
   @PostMapping("/{id}/dispatch")
   @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
-  Map<String, Object> dispatch(@PathVariable UUID id, @Valid @RequestBody TripDtos.Event r) {
-    return trips.advance(id, "DISPATCH", r);
+  Map<String, Object> dispatch(
+      @PathVariable UUID id,
+      @RequestParam(defaultValue = "false") boolean overrideCreditLimit,
+      @Valid @RequestBody TripDtos.Event r) {
+    return trips.advance(id, "DISPATCH", r, overrideCreditLimit);
   }
 
   @PostMapping("/{id}/arrive")

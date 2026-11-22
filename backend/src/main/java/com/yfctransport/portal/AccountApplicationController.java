@@ -27,7 +27,10 @@ class AccountApplicationController {
       @Pattern(regexp = "[+0-9 ()-]{7,20}") String emergencyMobile) {}
 
   record Decision(
-      @NotNull UUID eventId, @NotBlank @Size(max = 1000) String reason, UUID branchId) {}
+      @NotNull UUID eventId,
+      @NotBlank @Size(max = 1000) String reason,
+      UUID branchId,
+      UUID existingRecordId) {}
 
   private final AccountApplicationService service;
 

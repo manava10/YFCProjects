@@ -2,6 +2,7 @@ package com.yfctransport.logistics;
 
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -62,4 +63,8 @@ class TripDtos {
       @NotBlank @Size(max = 500) String evidenceReference) {}
 
   record Decision(@NotNull UUID eventId, @NotBlank @Size(max = 1000) String reason) {}
+
+  record EwayBill(
+      @NotBlank @Pattern(regexp = "[A-Za-z0-9-]{8,20}") String ewayBillNumber,
+      @NotNull Instant validUntil) {}
 }

@@ -160,11 +160,35 @@ class OrderController {
   @Transactional(readOnly = true)
   org.springframework.data.domain.Page<OrderView> list(
       @RequestParam(defaultValue = "0") @Min(0) int page,
-      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-    return orders.findAll(org.springframework.data.domain.PageRequest.of(page, size,
-        org.springframework.data.domain.Sort.by(
-            org.springframework.data.domain.Sort.Order.desc("createdAt"),
-            org.springframework.data.domain.Sort.Order.desc("id")))).map(this::view);
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+      @RequestParam(required = false) @Size(max = 120) String q,
+      @RequestParam(required = false) UUID branchId,
+      @RequestParam(required = false) UUID customerId,
+      @RequestParam(required = false) BusinessType businessType) {
+    var pageable =
+        org.springframework.data.domain.PageRequest.of(
+            page,
+            size,
+            org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Order.desc("createdAt"),
+                org.springframework.data.domain.Sort.Order.desc("id")));
+    org.springframework.data.jpa.domain.Specification<SalesOrder> spec =
+        (root, query, cb) -> {
+          var predicates = new ArrayList<jakarta.persistence.criteria.Predicate>();
+          if (branchId != null) predicates.add(cb.equal(root.get("branchId"), branchId));
+          if (customerId != null) predicates.add(cb.equal(root.get("customerId"), customerId));
+          if (businessType != null)
+            predicates.add(cb.equal(root.get("businessType"), businessType.name()));
+          if (q != null && !q.isBlank()) {
+            String like = "%" + q.strip().toLowerCase(Locale.ROOT) + "%";
+            predicates.add(
+                cb.or(
+                    cb.like(cb.lower(cb.coalesce(root.get("material"), "")), like),
+                    cb.like(cb.lower(cb.coalesce(root.get("deliverySite"), "")), like)));
+          }
+          return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    return orders.findAll(spec, pageable).map(this::view);
   }
 
   @GetMapping("/{id}")

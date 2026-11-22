@@ -57,6 +57,13 @@ export function Overview({ access }: { access: Access }) {
     ? publicDesk.data.enquiries.length +
       publicDesk.data.quotes.filter((quote) => quote.stage !== "DELIVERED").length
     : 0;
+  const alertsSummary = useQuery({
+    queryKey: ["overview", "alerts-summary"],
+    queryFn: () =>
+      request<{ totalAlerts: number; criticalCount: number; warningCount: number }>(
+        "/api/v1/alerts/summary",
+      ),
+  });
   const expenses = useOverview(
     "expenses",
     "/api/v1/expenses?size=100",
@@ -72,6 +79,7 @@ export function Overview({ access }: { access: Access }) {
     orders,
     enquiries,
     trips,
+    alertsSummary,
     ...(access.write ? [compliance] : []),
     ...(access.finance ? [expenses] : []),
     ...(access.admin || access.operations ? [requests, publicDesk] : []),
@@ -102,27 +110,20 @@ export function Overview({ access }: { access: Access }) {
       to: "/trips",
       error: trips.isError,
     },
-    access.write
-      ? {
-          name: "Compliance alerts in view",
-          number: count(compliance.data),
-          note: "First 100 alerts · due within 30 days",
-          icon: ShieldCheck,
-          to: "/fleet",
-          error: compliance.isError,
-        }
-      : {
-          name: "Expenses awaiting review",
-          number: expenses.data ? pending.length : undefined,
-          note: "Across the latest 100 expense records",
-          icon: Fuel,
-          to: "/operating",
-          error: expenses.isError,
-        },
+    {
+      name: "Operational alerts",
+      number: alertsSummary.data?.totalAlerts,
+      note: alertsSummary.data
+        ? `${alertsSummary.data.criticalCount} critical · ${alertsSummary.data.warningCount} warning (E-Way, compliance, maintenance, overdue)`
+        : "E-Way Bills, compliance, maintenance & overdue bills",
+      icon: ShieldCheck,
+      to: "/alerts",
+      error: alertsSummary.isError,
+    },
   ];
   const stages = [
     { title: "Allocated", states: ["ALLOCATED"], color: "planning" },
-    { title: "Loading", states: ["LOADING", "LOADED"], color: "loading" },
+    { title: "Loading", states: ["LOADING", "LOADED"], color: "stage-loading" },
     {
       title: "On the road",
       states: ["DISPATCHED", "ARRIVED", "UNLOADING"],
@@ -134,104 +135,69 @@ export function Overview({ access }: { access: Access }) {
     <div className="transport-overview">
       <div className="ops-title">
         <div>
-          <p className="eyebrow">YFC TRANSPORT / OPERATIONS OVERVIEW</p>
-          <h1>Your business. In motion.</h1>
+          <p className="eyebrow">Operations Command Center</p>
+          <h1>Overview</h1>
           <p>
-            Material supply, fleet movement and the work that needs your
-            attention.
+            Live snapshot of orders, yard supply, fleet movement, and items needing review.
           </p>
         </div>
-        <button
-          className="secondary"
-          disabled={loading}
-          onClick={() =>
-            queries.forEach((q) => {
-              void q.refetch();
-            })
-          }
-        >
-          <RefreshCw size={15} className={loading ? "spinning" : ""} />
-          {loading ? "Refreshing" : "Refresh overview"}
-        </button>
-      </div>
-      {(access.admin || access.operations) && rows(requests.data).length > 0 && (
-        <Link className="dispatch-banner request-banner" to="/account-requests">
-          <div>
-            <span className="dispatch-kicker">ACCOUNT REQUESTS</span>
-            <h2>
-              {rows(requests.data).length}{" "}
-              {rows(requests.data).length === 1 ? "person is" : "people are"} waiting
-              for a login.
-            </h2>
-            <p>Review the details they submitted, then approve or disapprove.</p>
-          </div>
-        </Link>
-      )}
-      {(access.admin || access.operations) && publicLeads > 0 && (
-        <Link className="dispatch-banner request-banner" to="/site">
-          <div>
-            <span className="dispatch-kicker">CUSTOMER PAGE</span>
-            <h2>
-              {publicLeads} {publicLeads === 1 ? "item is" : "items are"} waiting on the
-              public desk.
-            </h2>
-            <p>Enquiries and quotes from the customer page, in the latest 50 of each.</p>
-          </div>
-        </Link>
-      )}
-      <section className="dispatch-banner">
-        <div className="dispatch-copy">
-          <span className="dispatch-kicker">
-            <span /> TRANSPORT & MATERIAL SUPPLY
-          </span>
-          <h2>
-            From customer demand
-            <br />
-            to the final delivery.
-          </h2>
-          <p>A connected view of your orders, dispatches and owned fleet.</p>
-          <div className="dispatch-actions">
-            <Link
-              className="button light"
-              to={access.write ? "/trips" : "/orders"}
-            >
-              {access.write ? "Open dispatch workspace" : "View sales orders"}
-              <ArrowUpRight size={17} />
+        <div className="ops-title-actions">
+          <button
+            className="secondary"
+            disabled={loading}
+            onClick={() =>
+              queries.forEach((q) => {
+                void q.refetch();
+              })
+            }
+          >
+            <RefreshCw size={14} className={loading ? "spinning" : ""} />
+            {loading ? "Refreshing" : "Refresh"}
+          </button>
+          {access.write && (
+            <Link className="button secondary" to="/sales/new">
+              <Plus size={14} /> New enquiry
             </Link>
-            {access.write && (
-              <Link to="/sales/new">
-                <Plus size={16} /> New enquiry
+          )}
+          <Link className="button" to={access.write ? "/trips" : "/orders"}>
+            {access.write ? "Dispatch workspace" : "View sales orders"}
+            <ArrowUpRight size={15} />
+          </Link>
+        </div>
+      </div>
+      {(access.admin || access.operations) &&
+        (rows(requests.data).length > 0 || publicLeads > 0) && (
+          <div className="alert-strip">
+            {rows(requests.data).length > 0 && (
+              <Link className="alert-pill" to="/account-requests">
+                <div>
+                  <strong>
+                    {rows(requests.data).length}{" "}
+                    {rows(requests.data).length === 1
+                      ? "account request"
+                      : "account requests"}{" "}
+                    pending approval
+                  </strong>
+                  <span>Review submitted customer, supplier, or driver details</span>
+                </div>
+                <ArrowUpRight size={16} />
+              </Link>
+            )}
+            {publicLeads > 0 && (
+              <Link className="alert-pill info" to="/site">
+                <div>
+                  <strong>
+                    {publicLeads}{" "}
+                    {publicLeads === 1 ? "lead waiting" : "leads waiting"} on
+                    the public desk
+                  </strong>
+                  <span>Enquiries and open quotes from the customer website</span>
+                </div>
+                <ArrowUpRight size={16} />
               </Link>
             )}
           </div>
-        </div>
-        <div className="dispatch-map" aria-hidden="true">
-          <div className="map-grid" />
-          <svg viewBox="0 0 430 210">
-            <path
-              d="M42 155 H140 Q164 155 164 131 V78 Q164 56 188 56 H340 Q367 56 367 81 V132"
-              fill="none"
-              stroke="#799b75"
-              strokeWidth="2"
-              strokeDasharray="5 6"
-            />
-            <circle cx="42" cy="155" r="7" fill="#d5e6ac" />
-            <circle cx="367" cy="132" r="7" fill="#d5e6ac" />
-          </svg>
-          <span className="route-label route-source">
-            <Warehouse size={17} />
-            SOURCE YARD
-          </span>
-          <span className="route-truck">
-            <Truck size={47} strokeWidth={1.4} />
-          </span>
-          <span className="route-label route-site">
-            <MapPin size={17} />
-            CUSTOMER SITE
-          </span>
-          <span className="route-caption">SOURCE → DISPATCH → DELIVERY</span>
-        </div>
-      </section>
+        )}
       <div className="ops-stats">
         {stats.map((s) => (
           <Link to={s.to} className="ops-stat" key={s.name}>

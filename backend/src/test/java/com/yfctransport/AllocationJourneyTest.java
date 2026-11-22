@@ -394,6 +394,23 @@ class AllocationJourneyTest {
                 .param("status", "ACTIVE"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1));
+
+    // AR ageing report reflects the remaining 70,000 INR (current today, 1-30 overdue at +45 days)
+    mvc.perform(
+            get("/api/v1/accounting/ageing")
+                .param("asOf", b.h.helpers.today().toString())
+                .param("partyType", "CUSTOMER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.parties[?(@.party_id=='" + b.f.sales().customer() + "')].current")
+            .value(70000.0));
+    mvc.perform(
+            get("/api/v1/accounting/ageing")
+                .param("asOf", b.h.helpers.today().plusDays(45).toString())
+                .param("partyType", "CUSTOMER"))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.parties[?(@.party_id=='" + b.f.sales().customer() + "')].days_1_30")
+                .value(70000.0));
   }
 
   @Test

@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUpRight, Check } from "lucide-react";
 import { post, put, request } from "./api";
-import { ErrorBox, Field, Heading } from "./ui";
+import { ErrorBox, Field, Heading, Notice, Status, Tabs } from "./ui";
 
 type Profile = Record<string, string>;
 type Stat = { id: string; value: string; label: string };
@@ -66,28 +68,68 @@ const images = [
   "/media/hero.jpg",
   "/media/truck.jpg",
 ];
-const words: [string, string, boolean][] = [
-  ["heroKicker", "Hero label", false],
-  ["heroTitle", "Hero title", false],
-  ["heroTitleRest", "Hero second line", false],
-  ["heroSubtitle", "Hero subtitle", false],
-  ["heroLine", "Hero proof line", false],
-  ["aboutKicker", "About label", false],
-  ["aboutTitle", "About title", false],
-  ["aboutParagraph1", "About paragraph 1", true],
-  ["aboutParagraph2", "About paragraph 2", true],
-  ["aboutParagraph3", "About paragraph 3", true],
-  ["aboutCaption", "Photo caption", false],
-  ["aboutCaptionAside", "Photo aside", false],
-  ["contactKicker", "Contact label", false],
-  ["contactTitle", "Contact title", false],
-  ["contactBody", "Contact paragraph", true],
-  ["contactTagline", "Tagline", false],
-  ["footerLine", "Footer line", false],
+
+type WordGroup = {
+  title: string;
+  fields: [string, string, boolean][];
+};
+
+const wordGroups: WordGroup[] = [
+  {
+    title: "Contact & Trusted Clients",
+    fields: [
+      ["contactPhone", "Contact phone", false],
+      ["whatsappNumber", "WhatsApp number (digits only)", false],
+      ["contactEmail", "Contact email", false],
+      ["trustedClients", "Trusted clients (comma-separated)", false],
+    ],
+  },
+  {
+    title: "Hero Banner",
+    fields: [
+      ["heroKicker", "Hero badge label", false],
+      ["heroTitle", "Hero title (line 1)", false],
+      ["heroTitleRest", "Hero title (line 2, highlighted)", false],
+      ["heroSubtitle", "Hero subtitle", false],
+      ["heroLine", "Hero proof line", false],
+    ],
+  },
+  {
+    title: "About Section",
+    fields: [
+      ["aboutKicker", "About label", false],
+      ["aboutTitle", "About heading", false],
+      ["aboutCaption", "Photo caption", false],
+      ["aboutCaptionAside", "Photo aside", false],
+      ["aboutParagraph1", "About paragraph 1", true],
+      ["aboutParagraph2", "About paragraph 2", true],
+      ["aboutParagraph3", "About paragraph 3", true],
+    ],
+  },
+  {
+    title: "Enquiry Section & Footer",
+    fields: [
+      ["contactKicker", "Contact label", false],
+      ["contactTitle", "Contact heading", false],
+      ["contactTagline", "Brand tagline", false],
+      ["footerLine", "Footer line", false],
+      ["contactBody", "Contact description", true],
+    ],
+  },
 ];
+
+function SavedTag({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <span className="desk-saved" role="status">
+      <Check size={14} /> Saved
+    </span>
+  );
+}
 
 export function PublicDesk() {
   const client = useQueryClient();
+  const [tab, setTab] = useState("words");
   const desk = useQuery({
     queryKey: ["site-desk"],
     queryFn: () => request<Desk>("/api/v1/site/desk"),
@@ -98,60 +140,57 @@ export function PublicDesk() {
     void client.invalidateQueries({ queryKey: ["overview", "public-desk"] });
   }
   if (desk.isPending)
-    return <p className="loading">Opening the customer page…</p>;
+    return <p className="loading">Opening the customer site settings…</p>;
   if (desk.isError || !desk.data) return <ErrorBox error={desk.error} />;
   const { catalog, enquiries, quotes } = desk.data;
   return (
-    <>
+    <div className="desk-page">
       <Heading
         eyebrow="PUBLIC PAGE"
         title="Customer site"
-        description="Words, rates, plants, and the orders people send from the public page."
+        description="Manage public copy, contact details, ex-plant rates, plants, freight lanes, and incoming website enquiries."
+        action={
+          <Link className="button secondary" to="/">
+            View live site <ArrowUpRight size={15} />
+          </Link>
+        }
       />
-      <p>
-        The opening figures came with the brochure. Change any number here
-        before you treat it as the company’s record. A quote keeps the rate from
-        the moment it was issued.
-      </p>
-      <Words profile={catalog.profile} onSaved={saved} />
-      <Stats rows={catalog.stats} onSaved={saved} />
-      <Materials rows={catalog.materials} onSaved={saved} />
-      <Plants rows={catalog.plants} onSaved={saved} />
-      <Freight
-        plants={catalog.plants}
-        destinations={catalog.destinations}
-        lanes={catalog.freight}
-        onSaved={saved}
+      <Notice title="Live pricing notice">
+        Changes saved here immediately update the public website. Existing issued
+        quotes retain the rate recorded at the moment they were created.
+      </Notice>
+
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        items={[
+          { id: "words", label: "Words & Contact" },
+          { id: "stats", label: `Figures (${catalog.stats.length})` },
+          { id: "materials", label: `Materials (${catalog.materials.length})` },
+          { id: "plants", label: `Plants (${catalog.plants.length})` },
+          { id: "freight", label: "Freight Matrix" },
+          { id: "enquiries", label: `Enquiries (${enquiries.length})` },
+          { id: "quotes", label: `Orders (${quotes.length})` },
+        ]}
       />
-      <section className="panel">
-        <h2>Enquiries</h2>
-        {enquiries.length === 0 ? (
-          <p>No one has written in yet.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Reference</th>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {enquiries.map((row) => (
-                <tr key={row.reference}>
-                  <td>{row.reference}</td>
-                  <td>{row.name}</td>
-                  <td>{row.phone}</td>
-                  <td>{row.note || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-      <Quotes rows={quotes} onSaved={saved} />
-    </>
+
+      {tab === "words" && <Words profile={catalog.profile} onSaved={saved} />}
+      {tab === "stats" && <Stats rows={catalog.stats} onSaved={saved} />}
+      {tab === "materials" && (
+        <Materials rows={catalog.materials} onSaved={saved} />
+      )}
+      {tab === "plants" && <Plants rows={catalog.plants} onSaved={saved} />}
+      {tab === "freight" && (
+        <Freight
+          plants={catalog.plants}
+          destinations={catalog.destinations}
+          lanes={catalog.freight}
+          onSaved={saved}
+        />
+      )}
+      {tab === "enquiries" && <Enquiries rows={enquiries} />}
+      {tab === "quotes" && <Quotes rows={quotes} onSaved={saved} />}
+    </div>
   );
 }
 
@@ -165,16 +204,19 @@ function Words({
   const [draft, setDraft] = useState(profile);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
   useEffect(() => setDraft(profile), [profile]);
   return (
     <form
-      className="panel"
+      className="panel desk-form"
       onSubmit={async (event) => {
         event.preventDefault();
         setBusy(true);
         setError(null);
+        setOk(false);
         try {
           await put("/api/v1/site/profile", draft);
+          setOk(true);
           onSaved();
         } catch (caught) {
           setError(caught);
@@ -183,55 +225,83 @@ function Words({
         }
       }}
     >
-      <h2>Words on the page</h2>
-      <ErrorBox error={error} />
-      <div className="form-grid">
-        {words.map(([key, label, long]) => (
-          <Field key={key} label={label}>
-            {long ? (
-              <textarea
-                value={draft[key] ?? ""}
-                onChange={(event) =>
-                  setDraft({ ...draft, [key]: event.target.value })
-                }
-              />
-            ) : (
-              <input
-                value={draft[key] ?? ""}
-                onChange={(event) =>
-                  setDraft({ ...draft, [key]: event.target.value })
-                }
-              />
-            )}
-          </Field>
-        ))}
-        <Field label="About photo">
-          <select
-            value={draft.aboutImage}
-            onChange={(event) =>
-              setDraft({ ...draft, aboutImage: event.target.value })
-            }
-          >
-            {images.map((image) => (
-              <option key={image} value={image}>
-                {image}
-              </option>
-            ))}
-          </select>
-        </Field>
+      <div className="panel-heading">
+        <div>
+          <h3>Words &amp; contact details</h3>
+          <span className="muted">
+            Updates phone, WhatsApp, client strip, hero copy, and footer across the
+            public site.
+          </span>
+        </div>
       </div>
-      <button disabled={busy}>{busy ? "Saving…" : "Save words"}</button>
+      <ErrorBox error={error} />
+      {wordGroups.map((group) => (
+        <div className="desk-group" key={group.title}>
+          <h4 className="desk-group-title">{group.title}</h4>
+          <div className="desk-grid-2">
+            {group.fields.map(([key, label, long]) => (
+              <div className={long ? "desk-span-all" : undefined} key={key}>
+                <Field label={label}>
+                  {long ? (
+                    <textarea
+                      rows={3}
+                      value={draft[key] ?? ""}
+                      onChange={(event) => {
+                        setOk(false);
+                        setDraft({ ...draft, [key]: event.target.value });
+                      }}
+                    />
+                  ) : (
+                    <input
+                      value={draft[key] ?? ""}
+                      onChange={(event) => {
+                        setOk(false);
+                        setDraft({ ...draft, [key]: event.target.value });
+                      }}
+                    />
+                  )}
+                </Field>
+              </div>
+            ))}
+            {group.title === "About Section" && (
+              <div className="desk-span-all">
+                <ImageField
+                  label="About photo"
+                  value={draft.aboutImage}
+                  onChange={(aboutImage) => {
+                    setOk(false);
+                    setDraft({ ...draft, aboutImage });
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      <div className="desk-actions">
+        <SavedTag show={ok} />
+        <button disabled={busy}>{busy ? "Saving…" : "Save words & contact"}</button>
+      </div>
     </form>
   );
 }
 
 function Stats({ rows, onSaved }: { rows: Stat[]; onSaved: () => void }) {
   return (
-    <section className="panel">
-      <h2>Figures</h2>
-      {rows.map((row) => (
-        <StatRow key={row.id} row={row} onSaved={onSaved} />
-      ))}
+    <section className="panel desk-section">
+      <div className="panel-heading">
+        <div>
+          <h3>Key hero figures</h3>
+          <span className="muted">
+            Displayed as the 4 track-record stat cards underneath the hero banner.
+          </span>
+        </div>
+      </div>
+      <div className="desk-stack">
+        {rows.map((row) => (
+          <StatRow key={row.id} row={row} onSaved={onSaved} />
+        ))}
+      </div>
     </section>
   );
 }
@@ -240,38 +310,56 @@ function StatRow({ row, onSaved }: { row: Stat; onSaved: () => void }) {
   const [value, setValue] = useState(row.value);
   const [label, setLabel] = useState(row.label);
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
   useEffect(() => {
     setValue(row.value);
     setLabel(row.label);
   }, [row]);
   return (
     <form
-      className="form-grid"
+      className="desk-item-card"
       onSubmit={async (event) => {
         event.preventDefault();
+        setBusy(true);
         setError(null);
+        setOk(false);
         try {
           await put(`/api/v1/site/stats/${row.id}`, { value, label });
+          setOk(true);
           onSaved();
         } catch (caught) {
           setError(caught);
+        } finally {
+          setBusy(false);
         }
       }}
     >
-      <Field label="Figure">
-        <input
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-        />
-      </Field>
-      <Field label="Caption">
-        <input
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-        />
-      </Field>
+      <div className="desk-stat-row">
+        <Field label="Figure">
+          <input
+            value={value}
+            onChange={(event) => {
+              setOk(false);
+              setValue(event.target.value);
+            }}
+          />
+        </Field>
+        <Field label="Caption">
+          <input
+            value={label}
+            onChange={(event) => {
+              setOk(false);
+              setLabel(event.target.value);
+            }}
+          />
+        </Field>
+        <div className="desk-inline-action">
+          <SavedTag show={ok} />
+          <button disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
       <ErrorBox error={error} />
-      <button>Save figure</button>
     </form>
   );
 }
@@ -284,11 +372,21 @@ function Materials({
   onSaved: () => void;
 }) {
   return (
-    <section className="panel">
-      <h2>Materials and ex-plant rates</h2>
-      {rows.map((row) => (
-        <MaterialRow key={row.id} row={row} onSaved={onSaved} />
-      ))}
+    <section className="panel desk-section">
+      <div className="panel-heading">
+        <div>
+          <h3>Materials &amp; ex-plant rates</h3>
+          <span className="muted">
+            Rates per tonne (excl. GST) shown in Live Market Rates, Materials
+            carousel, and the Price Estimator.
+          </span>
+        </div>
+      </div>
+      <div className="desk-stack">
+        {rows.map((row) => (
+          <MaterialRow key={row.id} row={row} onSaved={onSaved} />
+        ))}
+      </div>
       <AddMaterial onSaved={onSaved} />
     </section>
   );
@@ -297,13 +395,17 @@ function Materials({
 function MaterialRow({ row, onSaved }: { row: Material; onSaved: () => void }) {
   const [draft, setDraft] = useState(row);
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
   useEffect(() => setDraft(row), [row]);
   return (
     <form
-      className="form-grid"
+      className="desk-item-card"
       onSubmit={async (event) => {
         event.preventDefault();
+        setBusy(true);
         setError(null);
+        setOk(false);
         try {
           await put(`/api/v1/site/materials/${row.id}`, {
             name: draft.name,
@@ -313,71 +415,96 @@ function MaterialRow({ row, onSaved }: { row: Material; onSaved: () => void }) {
             image: draft.image,
             active: draft.active,
           });
+          setOk(true);
           onSaved();
         } catch (caught) {
           setError(caught);
+        } finally {
+          setBusy(false);
         }
       }}
     >
-      <Field label="Name">
-        <input
-          value={draft.name}
-          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-        />
-      </Field>
-      <Field label="Grade">
-        <input
-          value={draft.grade}
-          onChange={(event) =>
-            setDraft({ ...draft, grade: event.target.value })
-          }
-        />
-      </Field>
-      <Field label="Use">
-        <input
-          value={draft.useText}
-          onChange={(event) =>
-            setDraft({ ...draft, useText: event.target.value })
-          }
-        />
-      </Field>
-      <Field label="Rate per ton">
-        <input
-          inputMode="decimal"
-          value={draft.rate}
-          onChange={(event) =>
-            setDraft({ ...draft, rate: Number(event.target.value) })
-          }
-        />
-      </Field>
-      <ImageField
-        value={draft.image}
-        onChange={(image) => setDraft({ ...draft, image })}
-      />
-      <Field label="On the page">
-        <select
-          value={draft.active ? "yes" : "no"}
-          onChange={(event) =>
-            setDraft({ ...draft, active: event.target.value === "yes" })
-          }
-        >
-          <option value="yes">Shown</option>
-          <option value="no">Hidden</option>
-        </select>
-      </Field>
+      <div className="desk-grid-3">
+        <Field label="Name">
+          <input
+            value={draft.name}
+            onChange={(event) => {
+              setOk(false);
+              setDraft({ ...draft, name: event.target.value });
+            }}
+          />
+        </Field>
+        <Field label="Grade">
+          <input
+            value={draft.grade}
+            onChange={(event) => {
+              setOk(false);
+              setDraft({ ...draft, grade: event.target.value });
+            }}
+          />
+        </Field>
+        <Field label="Rate per ton (INR)">
+          <input
+            inputMode="decimal"
+            value={draft.rate}
+            onChange={(event) => {
+              setOk(false);
+              setDraft({ ...draft, rate: Number(event.target.value) });
+            }}
+          />
+        </Field>
+        <div className="desk-span-2">
+          <Field label="Typical use">
+            <input
+              value={draft.useText}
+              onChange={(event) => {
+                setOk(false);
+                setDraft({ ...draft, useText: event.target.value });
+              }}
+            />
+          </Field>
+        </div>
+        <Field label="Visibility">
+          <select
+            value={draft.active ? "yes" : "no"}
+            onChange={(event) => {
+              setOk(false);
+              setDraft({ ...draft, active: event.target.value === "yes" });
+            }}
+          >
+            <option value="yes">Shown on site</option>
+            <option value="no">Hidden</option>
+          </select>
+        </Field>
+        <div className="desk-span-2">
+          <ImageField
+            value={draft.image}
+            onChange={(image) => {
+              setOk(false);
+              setDraft({ ...draft, image });
+            }}
+          />
+        </div>
+        <div className="desk-inline-action desk-align-end">
+          <SavedTag show={ok} />
+          <button disabled={busy}>{busy ? "Saving…" : "Save material"}</button>
+        </div>
+      </div>
       <ErrorBox error={error} />
-      <button>Save material</button>
     </form>
   );
 }
 
 function AddMaterial({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState(images[0]);
   return (
     <form
-      className="form-grid"
+      className="desk-add-box"
       onSubmit={async (event) => {
         event.preventDefault();
+        setBusy(true);
         setError(null);
         const formElement = event.currentTarget;
         const form = new FormData(formElement);
@@ -390,39 +517,62 @@ function AddMaterial({ onSaved }: { onSaved: () => void }) {
             image: form.get("image"),
           });
           formElement.reset();
+          setPreview(images[0]);
           onSaved();
         } catch (caught) {
           setError(caught);
+        } finally {
+          setBusy(false);
         }
       }}
     >
-      <h3>Add a grade</h3>
-      <Field label="Name">
-        <input name="name" required />
-      </Field>
-      <Field label="Grade">
-        <input name="grade" required />
-      </Field>
-      <Field label="Use">
-        <input name="useText" required />
-      </Field>
-      <Field label="Rate per ton">
-        <input name="rate" inputMode="decimal" required />
-      </Field>
-      <ImageField name="image" />
+      <h4 className="desk-group-title">Add a new material grade</h4>
+      <div className="desk-grid-3">
+        <Field label="Name">
+          <input name="name" placeholder="e.g. 40 MM Aggregate" required />
+        </Field>
+        <Field label="Grade">
+          <input name="grade" placeholder="e.g. 40 mm" required />
+        </Field>
+        <Field label="Rate per ton (INR)">
+          <input name="rate" inputMode="decimal" placeholder="800" required />
+        </Field>
+        <div className="desk-span-2">
+          <Field label="Typical use">
+            <input
+              name="useText"
+              placeholder="Road sub-base, mass concrete, drainage"
+              required
+            />
+          </Field>
+        </div>
+        <ImageField name="image" value={preview} onChange={setPreview} />
+      </div>
       <ErrorBox error={error} />
-      <button>Add material</button>
+      <div className="desk-actions">
+        <button disabled={busy}>{busy ? "Adding…" : "Add material"}</button>
+      </div>
     </form>
   );
 }
 
 function Plants({ rows, onSaved }: { rows: Plant[]; onSaved: () => void }) {
   return (
-    <section className="panel">
-      <h2>Plants</h2>
-      {rows.map((row) => (
-        <PlantRow key={row.id} row={row} onSaved={onSaved} />
-      ))}
+    <section className="panel desk-section">
+      <div className="panel-heading">
+        <div>
+          <h3>Loading plants &amp; hubs</h3>
+          <span className="muted">
+            Shown in the Plant Directory and as loading points in the Price
+            Estimator.
+          </span>
+        </div>
+      </div>
+      <div className="desk-stack">
+        {rows.map((row) => (
+          <PlantRow key={row.id} row={row} onSaved={onSaved} />
+        ))}
+      </div>
       <AddPlant onSaved={onSaved} />
     </section>
   );
@@ -431,13 +581,17 @@ function Plants({ rows, onSaved }: { rows: Plant[]; onSaved: () => void }) {
 function PlantRow({ row, onSaved }: { row: Plant; onSaved: () => void }) {
   const [draft, setDraft] = useState(row);
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
   useEffect(() => setDraft(row), [row]);
   return (
     <form
-      className="form-grid"
+      className="desk-item-card"
       onSubmit={async (event) => {
         event.preventDefault();
+        setBusy(true);
         setError(null);
+        setOk(false);
         try {
           await put(`/api/v1/site/plants/${row.id}`, {
             name: draft.name,
@@ -446,62 +600,86 @@ function PlantRow({ row, onSaved }: { row: Plant; onSaved: () => void }) {
             image: draft.image,
             active: draft.active,
           });
+          setOk(true);
           onSaved();
         } catch (caught) {
           setError(caught);
+        } finally {
+          setBusy(false);
         }
       }}
     >
-      <Field label="Name">
-        <input
-          value={draft.name}
-          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+      <div className="desk-grid-3">
+        <Field label="Plant name">
+          <input
+            value={draft.name}
+            onChange={(event) => {
+              setOk(false);
+              setDraft({ ...draft, name: event.target.value });
+            }}
+          />
+        </Field>
+        <Field label="Place / corridor">
+          <input
+            value={draft.place}
+            onChange={(event) => {
+              setOk(false);
+              setDraft({ ...draft, place: event.target.value });
+            }}
+          />
+        </Field>
+        <Field label="Visibility">
+          <select
+            value={draft.active ? "yes" : "no"}
+            onChange={(event) => {
+              setOk(false);
+              setDraft({ ...draft, active: event.target.value === "yes" });
+            }}
+          >
+            <option value="yes">Shown on site</option>
+            <option value="no">Hidden</option>
+          </select>
+        </Field>
+        <div className="desk-span-2">
+          <Field label="Description / dispatch note">
+            <input
+              value={draft.note}
+              onChange={(event) => {
+                setOk(false);
+                setDraft({ ...draft, note: event.target.value });
+              }}
+            />
+          </Field>
+        </div>
+        <ImageField
+          value={draft.image}
+          onChange={(image) => {
+            setOk(false);
+            setDraft({ ...draft, image });
+          }}
         />
-      </Field>
-      <Field label="Place">
-        <input
-          value={draft.place}
-          onChange={(event) =>
-            setDraft({ ...draft, place: event.target.value })
-          }
-        />
-      </Field>
-      <Field label="Note">
-        <input
-          value={draft.note}
-          onChange={(event) => setDraft({ ...draft, note: event.target.value })}
-        />
-      </Field>
-      <ImageField
-        value={draft.image}
-        onChange={(image) => setDraft({ ...draft, image })}
-      />
-      <Field label="On the page">
-        <select
-          value={draft.active ? "yes" : "no"}
-          onChange={(event) =>
-            setDraft({ ...draft, active: event.target.value === "yes" })
-          }
-        >
-          <option value="yes">Shown</option>
-          <option value="no">Hidden</option>
-        </select>
-      </Field>
+      </div>
       <ErrorBox error={error} />
-      <button>Save plant</button>
+      <div className="desk-actions">
+        <SavedTag show={ok} />
+        <button disabled={busy}>{busy ? "Saving…" : "Save plant"}</button>
+      </div>
     </form>
   );
 }
 
 function AddPlant({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState("/media/plant.jpg");
   return (
     <form
-      className="form-grid"
+      className="desk-add-box"
       onSubmit={async (event) => {
         event.preventDefault();
         const formElement = event.currentTarget;
         const form = new FormData(formElement);
+        setBusy(true);
         setError(null);
         try {
           await post("/api/v1/site/plants", {
@@ -511,25 +689,38 @@ function AddPlant({ onSaved }: { onSaved: () => void }) {
             image: form.get("image"),
           });
           formElement.reset();
+          setPreview("/media/plant.jpg");
           onSaved();
         } catch (caught) {
           setError(caught);
+        } finally {
+          setBusy(false);
         }
       }}
     >
-      <h3>Add a plant</h3>
-      <Field label="Name">
-        <input name="name" required />
-      </Field>
-      <Field label="Place">
-        <input name="place" required />
-      </Field>
-      <Field label="Note">
-        <input name="note" required />
-      </Field>
-      <ImageField name="image" />
+      <h4 className="desk-group-title">Add a new plant</h4>
+      <div className="desk-grid-3">
+        <Field label="Plant name">
+          <input name="name" placeholder="e.g. Neemrana Yard" required />
+        </Field>
+        <Field label="Place / corridor">
+          <input name="place" placeholder="e.g. Alwar, Rajasthan" required />
+        </Field>
+        <ImageField name="image" value={preview} onChange={setPreview} />
+        <div className="desk-span-all">
+          <Field label="Description / dispatch note">
+            <input
+              name="note"
+              placeholder="Operating hours, primary grades, weighbridge info"
+              required
+            />
+          </Field>
+        </div>
+      </div>
       <ErrorBox error={error} />
-      <button>Add plant</button>
+      <div className="desk-actions">
+        <button disabled={busy}>{busy ? "Adding…" : "Add plant"}</button>
+      </div>
     </form>
   );
 }
@@ -548,6 +739,7 @@ function Freight({
   const [rates, setRates] = useState<Record<string, string>>({});
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
   useEffect(() => {
     const next: Record<string, string> = {};
     for (const lane of lanes)
@@ -555,14 +747,24 @@ function Freight({
     setRates(next);
   }, [lanes]);
   return (
-    <section className="panel">
-      <h2>Drops and freight per ton</h2>
+    <section className="panel desk-section">
+      <div className="panel-heading">
+        <div>
+          <h3>Delivery drops &amp; freight per ton (INR)</h3>
+          <span className="muted">
+            Used by the public Price Estimator and Plant Directory to compute
+            landed cost.
+          </span>
+        </div>
+      </div>
       <AddDrop onSaved={onSaved} />
       <form
+        className="desk-form"
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
           setError(null);
+          setOk(false);
           try {
             await put("/api/v1/site/freight", {
               lanes: Object.entries(rates).map(([key, rate]) => {
@@ -570,6 +772,7 @@ function Freight({
                 return { plantId, destinationId, rate: Number(rate) };
               }),
             });
+            setOk(true);
             onSaved();
           } catch (caught) {
             setError(caught);
@@ -578,11 +781,11 @@ function Freight({
           }
         }}
       >
-        <div style={{ overflowX: "auto" }}>
+        <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Drop</th>
+                <th>Delivery destination</th>
                 {plants.map((plant) => (
                   <th key={plant.id}>{plant.name}</th>
                 ))}
@@ -592,19 +795,21 @@ function Freight({
               {destinations.map((drop) => (
                 <tr key={drop.id}>
                   <td>
-                    {drop.name}
-                    {drop.active ? "" : " (hidden)"}
+                    <strong>{drop.name}</strong>
+                    {!drop.active && <small className="muted">Hidden</small>}
                   </td>
                   {plants.map((plant) => {
                     const key = `${plant.id}:${drop.id}`;
                     return (
                       <td key={key}>
                         <input
+                          className="desk-rate-input"
                           inputMode="decimal"
                           value={rates[key] ?? ""}
-                          onChange={(event) =>
-                            setRates({ ...rates, [key]: event.target.value })
-                          }
+                          onChange={(event) => {
+                            setOk(false);
+                            setRates({ ...rates, [key]: event.target.value });
+                          }}
                         />
                       </td>
                     );
@@ -615,7 +820,10 @@ function Freight({
           </table>
         </div>
         <ErrorBox error={error} />
-        <button disabled={busy}>{busy ? "Saving…" : "Save freight"}</button>
+        <div className="desk-actions">
+          <SavedTag show={ok} />
+          <button disabled={busy}>{busy ? "Saving…" : "Save freight matrix"}</button>
+        </div>
       </form>
     </section>
   );
@@ -623,12 +831,15 @@ function Freight({
 
 function AddDrop({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
   return (
     <form
+      className="desk-add-drop"
       onSubmit={async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const formElement = event.currentTarget;
         const form = new FormData(formElement);
+        setBusy(true);
         setError(null);
         try {
           await post("/api/v1/site/destinations", { name: form.get("name") });
@@ -636,26 +847,96 @@ function AddDrop({ onSaved }: { onSaved: () => void }) {
           onSaved();
         } catch (caught) {
           setError(caught);
+        } finally {
+          setBusy(false);
         }
       }}
     >
-      <Field label="New drop">
-        <input name="name" placeholder="Rewari, Haryana" required />
-      </Field>
+      <div className="desk-add-drop-row">
+        <Field label="Add new delivery destination">
+          <input name="name" placeholder="e.g. Rewari, Haryana" required />
+        </Field>
+        <button className="secondary" disabled={busy}>
+          {busy ? "Adding…" : "Add drop"}
+        </button>
+      </div>
       <ErrorBox error={error} />
-      <button className="secondary">Add drop</button>
     </form>
+  );
+}
+
+function Enquiries({ rows }: { rows: Enquiry[] }) {
+  return (
+    <section className="panel desk-section">
+      <div className="panel-heading">
+        <div>
+          <h3>Incoming website enquiries</h3>
+          <span className="muted">
+            Estimate enquiries, callback requests, and contact messages sent from
+            the public site.
+          </span>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <p className="muted">No website enquiries have been submitted yet.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Reference</th>
+                <th>Name / Company</th>
+                <th>Phone</th>
+                <th>Note / Estimate details</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.reference}>
+                  <td>
+                    <code>{row.reference}</code>
+                  </td>
+                  <td>
+                    <strong>{row.name}</strong>
+                  </td>
+                  <td>{row.phone}</td>
+                  <td>{row.note || "—"}</td>
+                  <td className="desk-td-action">
+                    <Link className="button secondary" to="/sales/new">
+                      New ERP RFQ
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
 function Quotes({ rows, onSaved }: { rows: Quote[]; onSaved: () => void }) {
   return (
-    <section className="panel">
-      <h2>Orders from the customer page</h2>
+    <section className="panel desk-section">
+      <div className="panel-heading">
+        <div>
+          <h3>Trackable desk tickets</h3>
+          <span className="muted">
+            Advance dispatch stages shown when customers look up their order ID on
+            the public page.
+          </span>
+        </div>
+      </div>
       {rows.length === 0 ? (
-        <p>No quote has been issued yet.</p>
+        <p className="muted">No desk tickets have been issued yet.</p>
       ) : (
-        rows.map((row) => <QuoteRow key={row.id} row={row} onSaved={onSaved} />)
+        <div className="desk-stack">
+          {rows.map((row) => (
+            <QuoteRow key={row.id} row={row} onSaved={onSaved} />
+          ))}
+        </div>
       )}
     </section>
   );
@@ -675,72 +956,82 @@ const stageLabel: Record<string, string> = {
 function QuoteRow({ row, onSaved }: { row: Quote; onSaved: () => void }) {
   const next = nextStage[row.stage];
   const [error, setError] = useState<unknown>(null);
-  if (!next) {
-    return (
-      <div>
-        <strong>{row.reference}</strong>
-        <p>
-          {row.materialName} · {row.quantity} ton · {row.plantName} →{" "}
-          {row.destination} · Delivered
-        </p>
-      </div>
-    );
-  }
+  const [busy, setBusy] = useState(false);
   return (
-    <form
-      className="form-grid"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setError(null);
-        try {
-          await post(`/api/v1/site/desk/quotes/${row.id}/stage`, {
-            stage: next,
-          });
-          onSaved();
-        } catch (caught) {
-          setError(caught);
-        }
-      }}
-    >
-      <div>
-        <strong>{row.reference}</strong>
-        <p>
-          {row.materialName} · {row.quantity} ton · {row.plantName} →{" "}
-          {row.destination}
-        </p>
-        <p>Mediator / Reference: {row.mediator || "—"}</p>
+    <div className="desk-item-card">
+      <div className="desk-quote-row">
+        <div className="desk-quote-info">
+          <div className="desk-quote-head">
+            <strong>{row.reference}</strong>
+            <Status value={row.stage} />
+          </div>
+          <p>
+            {row.materialName} · {row.quantity} ton · {row.plantName} →{" "}
+            {row.destination}
+          </p>
+          {row.mediator && (
+            <small className="muted">Mediator / Ref: {row.mediator}</small>
+          )}
+        </div>
+        {next && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await post(`/api/v1/site/desk/quotes/${row.id}/stage`, {
+                  stage: next,
+                });
+                onSaved();
+              } catch (caught) {
+                setError(caught);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Updating…" : `Mark ${stageLabel[next]}`}
+          </button>
+        )}
       </div>
       <ErrorBox error={error} />
-      <button>Mark {stageLabel[next]}</button>
-    </form>
+    </div>
   );
 }
 
 function ImageField({
+  label = "Photo",
   value,
   onChange,
   name,
 }: {
+  label?: string;
   value?: string;
   onChange?: (image: string) => void;
   name?: string;
 }) {
+  const src = value || images[0];
   return (
-    <Field label="Photo">
-      <select
-        name={name}
-        value={name ? undefined : value}
-        defaultValue={name ? images[0] : undefined}
-        onChange={
-          onChange ? (event) => onChange(event.target.value) : undefined
-        }
-      >
-        {images.map((image) => (
-          <option key={image} value={image}>
-            {image.replace("/media/", "")}
-          </option>
-        ))}
-      </select>
+    <Field label={label}>
+      <div className="desk-img-picker">
+        <img src={src} alt="" className="desk-thumb" />
+        <select
+          name={name}
+          value={name ? undefined : src}
+          defaultValue={name ? src : undefined}
+          onChange={
+            onChange ? (event) => onChange(event.target.value) : undefined
+          }
+        >
+          {images.map((image) => (
+            <option key={image} value={image}>
+              {image.replace("/media/", "")}
+            </option>
+          ))}
+        </select>
+      </div>
     </Field>
   );
 }

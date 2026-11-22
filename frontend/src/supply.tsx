@@ -12,14 +12,17 @@ import {
   DataTable,
   ErrorBox,
   Field,
+  FilterBar,
   Heading,
   IdField,
   Notice,
   Pager,
+  queryPath,
   RecordView,
   ReviewBox,
   SaveForm,
   useAccess,
+  useDebounced,
   usePaged,
 } from "./ui";
 
@@ -161,7 +164,18 @@ export function Purchases() {
   const write = useAccess().write;
   const nav = useNavigate();
   const [create, setCreate] = useState(false);
-  const { page, setPage, q, items, hasNext } = usePaged("purchases", "/api/v1/purchases");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const debouncedSearch = useDebounced(search);
+  const { page, setPage, q, items, hasNext } = usePaged(
+    "purchases",
+    queryPath("/api/v1/purchases", {
+      q: debouncedSearch,
+      status: statusFilter,
+      branchId: branchFilter,
+    }),
+  );
   return (
     <>
       <Heading
@@ -183,6 +197,40 @@ export function Purchases() {
       <ErrorBox error={q.error} />
       {create && <PurchaseForm />}
       <div className="panel">
+        <FilterBar
+          active={!!(search || statusFilter || branchFilter)}
+          onReset={() => {
+            setSearch("");
+            setStatusFilter("");
+            setBranchFilter("");
+          }}
+        >
+          <input
+            type="search"
+            aria-label="Search purchases"
+            placeholder="Search material, supplier, or plant…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <select
+            aria-label="Filter purchases by status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="OPEN">Open</option>
+            <option value="RECEIVED">Received</option>
+            <option value="CLOSED">Closed</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+          <select
+            aria-label="Filter purchases by branch"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            <Choices path="/api/v1/branches" empty="All branches" />
+          </select>
+        </FilterBar>
         <DataTable
           rows={items}
           onOpen={(row) => nav(`/purchases/${row.id}`)}

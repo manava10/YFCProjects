@@ -18,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 @Transactional
-class TripService {
+class TripService implements DriverTripExecution {
   private final JdbcTemplate db;
   private final OrderFulfillment orders;
   private final FleetAssignments fleet;
@@ -117,13 +117,41 @@ class TripService {
   }
 
   @Transactional(readOnly = true)
-  List<Map<String, Object>> list(int page, int size) {
+  List<Map<String, Object>> list(
+      int page, int size, String q, String status, TripDtos.Source source, UUID branchId) {
+    var where = new StringBuilder(" where 1=1");
+    var args = new ArrayList<Object>();
+    if (status != null && !status.isBlank()) {
+      where.append(" and t.status=?");
+      args.add(status.strip().toUpperCase(Locale.ROOT));
+    }
+    if (source != null) {
+      where.append(" and t.source=?");
+      args.add(source.name());
+    }
+    if (branchId != null) {
+      where.append(" and exists (select 1 from trucks tk where tk.id=t.truck_id and tk.branch_id=?)");
+      args.add(branchId);
+    }
+    if (q != null && !q.isBlank()) {
+      String like = "%" + q.strip().toLowerCase(Locale.ROOT) + "%";
+      where.append(
+          " and (lower(coalesce(t.truck_registration,'')) like ?"
+              + " or lower(coalesce(t.driver_name,'')) like ?"
+              + " or lower(coalesce(t.eway_bill_number,'')) like ?)");
+      args.add(like);
+      args.add(like);
+      args.add(like);
+    }
+    args.add(size);
+    args.add((long) page * size);
     return db
         .query(
-            "select id from trips order by created_at desc,id desc limit ? offset ?",
+            "select t.id from trips t"
+                + where
+                + " order by t.created_at desc,t.id desc limit ? offset ?",
             (r, n) -> r.getObject(1, UUID.class),
-            size,
-            (long) page * size)
+            args.toArray())
         .stream()
         .map(id -> result(id, false))
         .toList();
@@ -266,6 +294,11 @@ class TripService {
   }
 
   Map<String, Object> advance(UUID id, String action, TripDtos.Event r) {
+    return advance(id, action, r, false);
+  }
+
+  Map<String, Object> advance(
+      UUID id, String action, TripDtos.Event r, boolean overrideCreditLimit) {
     var t = lock(id);
     String body = payload();
     if (replay(id, r.eventId(), action, body)) return result(id, true);
@@ -283,7 +316,8 @@ class TripService {
         crew(t);
         if (!t.get("source").equals("TRANSPORT"))
           supply.dispatch(id, number(t, "loaded_quantity"), "Trip " + id);
-        orders.recordTripDispatch(id, uuid(t, "order_item_id"), number(t, "loaded_quantity"));
+        orders.recordTripDispatch(
+            id, uuid(t, "order_item_id"), number(t, "loaded_quantity"), overrideCreditLimit);
         next = "DISPATCHED";
         db.update("update trips set dispatched_at=current_timestamp where id=?", id);
       }
@@ -603,5 +637,104 @@ class TripService {
         trip,
         "Event=" + r.eventId());
     return correctionView(id, false);
+  }
+
+  Map<String, Object> updateEwayBill(UUID id, TripDtos.EwayBill r) {
+    var t = trip(id, true);
+    if ("CANCELLED".equals(t.get("status")))
+      throw conflict("Cannot attach an E-Way Bill to a cancelled trip");
+    String number = r.ewayBillNumber().strip().toUpperCase(Locale.ROOT);
+    db.update(
+        "update trips set eway_bill_number=?, eway_bill_valid_until=? where id=?",
+        number,
+        java.sql.Timestamp.from(r.validUntil()),
+        id);
+    audit.record(
+        "TRIP_EWAY_BILL_UPDATED",
+        "TRIP",
+        id,
+        "EWayBill=" + number + ", ValidUntil=" + r.validUntil());
+    return get(id);
+  }
+
+  @Transactional(readOnly = true)
+  List<Map<String, Object>> ewayBillAlerts(int hours) {
+    Instant now = Instant.now(clock);
+    Instant horizon = now.plusSeconds(hours * 3600L);
+    return db
+        .queryForList(
+            "select id, truck_registration, driver_name, status, planned_date, planned_quantity,"
+                + " eway_bill_number, eway_bill_valid_until from trips"
+                + " where eway_bill_number is not null"
+                + " and status not in ('DELIVERED','CANCELLED')"
+                + " and eway_bill_valid_until <= ?"
+                + " order by eway_bill_valid_until asc, id asc limit 100",
+            java.sql.Timestamp.from(horizon))
+        .stream()
+        .map(
+            raw -> {
+              var row = normalize(raw);
+              Object rawTs = row.get("eway_bill_valid_until");
+              Instant valid =
+                  rawTs instanceof java.sql.Timestamp ts
+                      ? ts.toInstant()
+                      : rawTs instanceof java.time.OffsetDateTime odt
+                          ? odt.toInstant()
+                          : (Instant) rawTs;
+              row.put("eway_bill_valid_until", valid);
+              row.put("expired", valid != null && valid.isBefore(now));
+              return row;
+            })
+        .toList();
+  }
+
+  @Override
+  public Map<String, Object> startLoading(UUID tripId, UUID eventId) {
+    return advance(tripId, "START_LOADING", new TripDtos.Event(eventId));
+  }
+
+  @Override
+  public Map<String, Object> load(
+      UUID tripId, UUID eventId, BigDecimal gross, BigDecimal tare, String slipReference) {
+    return load(tripId, new TripDtos.Load(eventId, gross, tare, slipReference));
+  }
+
+  @Override
+  public Map<String, Object> dispatch(UUID tripId, UUID eventId) {
+    return advance(tripId, "DISPATCH", new TripDtos.Event(eventId), false);
+  }
+
+  @Override
+  public Map<String, Object> arrive(UUID tripId, UUID eventId) {
+    return advance(tripId, "ARRIVE", new TripDtos.Event(eventId));
+  }
+
+  @Override
+  public Map<String, Object> startUnloading(UUID tripId, UUID eventId) {
+    return advance(tripId, "START_UNLOADING", new TripDtos.Event(eventId));
+  }
+
+  @Override
+  public Map<String, Object> deliver(
+      UUID tripId,
+      UUID eventId,
+      BigDecimal gross,
+      BigDecimal tare,
+      BigDecimal acceptedQuantity,
+      String slipReference,
+      String receiverName,
+      String proofReference,
+      String discrepancyReason) {
+    return deliver(
+        tripId,
+        new TripDtos.Deliver(
+            eventId,
+            gross,
+            tare,
+            acceptedQuantity,
+            slipReference,
+            receiverName,
+            proofReference,
+            discrepancyReason));
   }
 }

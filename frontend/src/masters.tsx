@@ -11,11 +11,14 @@ import {
   ErrorBox,
   Facts,
   Field,
+  FilterBar,
   Heading,
   Pager,
+  queryPath,
   SaveForm,
   Status,
   useAccess,
+  useDebounced,
   usePaged,
 } from "./ui";
 
@@ -24,7 +27,12 @@ export function Customers() {
   const [create, setCreate] = useState(false);
   const [selected, setSelected] = useState("");
   const [project, setProject] = useState("");
-  const { page, setPage, q, items, total, hasNext } = usePaged("customers", "/api/v1/customers");
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounced(search);
+  const { page, setPage, q, items, total, hasNext } = usePaged(
+    "customers",
+    queryPath("/api/v1/customers", { q: debouncedSearch }),
+  );
   const projects = useQuery({
     queryKey: ["projects", selected],
     queryFn: () => all(`/api/v1/customers/${selected}/projects`),
@@ -66,6 +74,15 @@ export function Customers() {
         </SaveForm>
       )}
       <div className="panel">
+        <FilterBar active={!!search} onReset={() => setSearch("")}>
+          <input
+            type="search"
+            aria-label="Search customers"
+            placeholder="Search by customer name, mobile, or GSTIN…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </FilterBar>
         {q.isPending ? (
           <p className="empty">Loading customers…</p>
         ) : (
@@ -294,7 +311,11 @@ export function Branches() {
       />
       <ErrorBox error={q.error} />
       {create && (
-        <SaveForm title="New branch" path="/api/v1/branches">
+        <SaveForm
+          title="New branch"
+          path="/api/v1/branches"
+          prepare={cleanBranch}
+        >
           <BranchFields />
         </SaveForm>
       )}
@@ -307,6 +328,7 @@ export function Branches() {
             { label: "Code", keys: ["code"] },
             { label: "City", keys: ["city"] },
             { label: "State", keys: ["state"] },
+            { label: "GSTIN", keys: ["gstin"] },
             { label: "Status", keys: ["active"], status: true },
           ]}
         />
@@ -315,7 +337,12 @@ export function Branches() {
       {selected && admin && (
         <div className="panel form-panel">
           <h3>{selected.name}</h3>
-          <SaveForm path={`/api/v1/branches/${selected.id}`} method="PUT" onSuccess={setSelected}>
+          <SaveForm
+            path={`/api/v1/branches/${selected.id}`}
+            method="PUT"
+            prepare={cleanBranch}
+            onSuccess={setSelected}
+          >
             <BranchFields current={selected} />
           </SaveForm>
           <SaveForm path={`/api/v1/branches/${selected.id}/status`} method="PATCH">
@@ -325,6 +352,16 @@ export function Branches() {
       )}
     </>
   );
+}
+
+function cleanBranch(body: Record<string, unknown>) {
+  const next = { ...body };
+  for (const key of ["gstin", "stateCode", "bankName", "bankAccount", "bankIfsc"]) {
+    if (next[key] === "" || next[key] == null) delete next[key];
+  }
+  if (typeof next.gstin === "string") next.gstin = next.gstin.toUpperCase();
+  if (typeof next.bankIfsc === "string") next.bankIfsc = next.bankIfsc.toUpperCase();
+  return next;
 }
 
 function BranchFields({ current }: { current?: RecordData }) {
@@ -354,6 +391,50 @@ function BranchFields({ current }: { current?: RecordData }) {
       </Field>
       <Field label="PIN code">
         <input name="pincode" required pattern="[1-9][0-9]{5}" defaultValue={current?.pincode ?? ""} />
+      </Field>
+      <Field label="Branch GSTIN (multi-state invoice series)">
+        <input
+          name="gstin"
+          maxLength={15}
+          placeholder="08ABCDE1234F1Z5"
+          pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9][Zz][A-Za-z0-9]"
+          style={{ textTransform: "uppercase" }}
+          defaultValue={current?.gstin ?? ""}
+        />
+      </Field>
+      <Field label="GST State Code (auto from GSTIN)">
+        <input
+          name="stateCode"
+          maxLength={2}
+          placeholder="08 / 06"
+          pattern="[0-9]{2}"
+          defaultValue={current?.stateCode ?? ""}
+        />
+      </Field>
+      <Field label="Settlement Bank Name">
+        <input
+          name="bankName"
+          maxLength={160}
+          placeholder="e.g. HDFC Bank, Kotputli"
+          defaultValue={current?.bankName ?? ""}
+        />
+      </Field>
+      <Field label="Bank Account No.">
+        <input
+          name="bankAccount"
+          maxLength={40}
+          defaultValue={current?.bankAccount ?? ""}
+        />
+      </Field>
+      <Field label="IFSC Code">
+        <input
+          name="bankIfsc"
+          maxLength={15}
+          placeholder="HDFC0001234"
+          pattern="[A-Za-z]{4}0[A-Za-z0-9]{6}"
+          style={{ textTransform: "uppercase" }}
+          defaultValue={current?.bankIfsc ?? ""}
+        />
       </Field>
     </div>
   );

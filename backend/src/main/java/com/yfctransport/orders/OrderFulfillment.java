@@ -19,7 +19,11 @@ public interface OrderFulfillment {
 
   void claimTripWorkflow(UUID itemId);
 
-  void recordTripDispatch(UUID tripId, UUID itemId, BigDecimal loaded);
+  void recordTripDispatch(UUID tripId, UUID itemId, BigDecimal loaded, boolean overrideCreditLimit);
+
+  default void recordTripDispatch(UUID tripId, UUID itemId, BigDecimal loaded) {
+    recordTripDispatch(tripId, itemId, loaded, false);
+  }
 
   void recordTripDelivery(UUID tripId, BigDecimal received);
 

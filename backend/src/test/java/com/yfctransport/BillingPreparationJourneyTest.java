@@ -728,7 +728,13 @@ class BillingPreparationJourneyTest {
         .andExpect(status().isCreated());
     var bill = getOne(id);
     assertThat(bill.read("$.invoice_issued", Boolean.class)).isTrue();
-    assertThat(bill.read("$.invoice_number", String.class)).startsWith("SI-");
+    String invoiceNumber = bill.read("$.invoice_number", String.class);
+    var today = h.helpers.today();
+    int fyStart = today.getMonthValue() >= 4 ? today.getYear() : today.getYear() - 1;
+    String expectedPrefix =
+        String.format("SI-%02d%02d-", fyStart % 100, (fyStart + 1) % 100);
+    assertThat(invoiceNumber).startsWith(expectedPrefix);
+    assertThat(invoiceNumber.length()).isLessThanOrEqualTo(16);
     assertThat(bill.read("$.cgst_amount", BigDecimal.class)).isEqualByComparingTo("3000.00");
     assertThat(bill.read("$.sgst_amount", BigDecimal.class)).isEqualByComparingTo("3000.00");
     assertThat(bill.read("$.igst_amount", BigDecimal.class)).isEqualByComparingTo("0");

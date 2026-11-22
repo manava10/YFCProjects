@@ -221,4 +221,71 @@ class AccountApplicationJourneyTest {
     assertThat(JsonPath.<List<?>>read(portal, "$.plants")).hasSize(1);
     assertThat(JsonPath.<String>read(portal, "$.profile.gstin")).isEqualTo(gstin);
   }
+
+  @Test
+  void approvalCanLinkExistingCustomerWithoutCreatingDuplicate() throws Exception {
+    String existingCustomerId =
+        JsonPath.read(
+            mvc.perform(
+                    post("/api/v1/customers")
+                        .with(user("ops").roles("OPERATIONS"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content(
+                            json.writeValueAsString(
+                                Map.of(
+                                    "name",
+                                    "Existing Infra Ltd",
+                                    "mobile",
+                                    "9876543299",
+                                    "address",
+                                    "Sector 44, Gurugram"))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(),
+            "$.id");
+    var app1 = customer("existing." + uid().substring(0, 8));
+    String app1Id = postApplication(app1, 201);
+    decide(
+        app1Id,
+        "approve",
+        Map.of(
+            "eventId",
+            uid(),
+            "reason",
+            "Verified against existing customer master",
+            "existingRecordId",
+            existingCustomerId),
+        "OPERATIONS");
+    String portal =
+        mvc.perform(
+                get("/api/v1/portal")
+                    .with(user(app1.get("username").toString()).roles("CUSTOMER")))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(JsonPath.<String>read(portal, "$.record_id")).isEqualTo(existingCustomerId);
+    assertThat(JsonPath.<String>read(portal, "$.profile.name")).isEqualTo("Existing Infra Ltd");
+
+    // A second application cannot claim the same existing customer
+    var app2 = customer("second." + uid().substring(0, 8));
+    String app2Id = postApplication(app2, 201);
+    mvc.perform(
+            post("/api/v1/account-applications/" + app2Id + "/approve")
+                .with(user("ops").roles("OPERATIONS"))
+                .with(csrf())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(
+                        Map.of(
+                            "eventId",
+                            uid(),
+                            "reason",
+                            "Duplicate login attempt",
+                            "existingRecordId",
+                            existingCustomerId))))
+        .andExpect(status().isConflict());
+  }
 }

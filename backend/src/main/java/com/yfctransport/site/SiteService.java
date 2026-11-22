@@ -36,12 +36,27 @@ class SiteService {
   }
 
   SiteDtos.Profile saveProfile(SiteDtos.Profile profile) {
+    String phone =
+        profile.contactPhone() == null || profile.contactPhone().isBlank()
+            ? "+91 96672 89071"
+            : profile.contactPhone().trim();
+    String email =
+        profile.contactEmail() == null || profile.contactEmail().isBlank()
+            ? "sales@yfctransport.com"
+            : profile.contactEmail().trim();
+    String whatsapp =
+        profile.whatsappNumber() == null || profile.whatsappNumber().isBlank()
+            ? "919667289071"
+            : profile.whatsappNumber().trim().replaceAll("[^0-9]", "");
+    String clients =
+        profile.trustedClients() == null ? "" : profile.trustedClients().trim();
     db.update(
         """
         update site_profile set hero_kicker=?, hero_title=?, hero_title_rest=?, hero_subtitle=?,
         hero_line=?, about_kicker=?, about_title=?, about_paragraph_1=?, about_paragraph_2=?,
         about_paragraph_3=?, about_image=?, about_caption=?, about_caption_aside=?,
-        contact_kicker=?, contact_title=?, contact_body=?, contact_tagline=?, footer_line=?
+        contact_kicker=?, contact_title=?, contact_body=?, contact_tagline=?, footer_line=?,
+        contact_phone=?, contact_email=?, whatsapp_number=?, trusted_clients=?
         where id=1
         """,
         profile.heroKicker().trim(),
@@ -61,7 +76,11 @@ class SiteService {
         profile.contactTitle().trim(),
         profile.contactBody().trim(),
         profile.contactTagline().trim(),
-        profile.footerLine().trim());
+        profile.footerLine().trim(),
+        phone,
+        email,
+        whatsapp,
+        clients);
     audit.record("SITE_PROFILE_UPDATED", "Site", SITE, "Customer page words updated");
     return profile();
   }
@@ -307,7 +326,8 @@ class SiteService {
         select hero_kicker, hero_title, hero_title_rest, hero_subtitle, hero_line, about_kicker,
         about_title, about_paragraph_1, about_paragraph_2, about_paragraph_3, about_image,
         about_caption, about_caption_aside, contact_kicker, contact_title, contact_body,
-        contact_tagline, footer_line from site_profile where id=1
+        contact_tagline, footer_line, contact_phone, contact_email, whatsapp_number,
+        trusted_clients from site_profile where id=1
         """,
         (rs, n) ->
             new SiteDtos.Profile(
@@ -328,7 +348,11 @@ class SiteService {
                 rs.getString("contact_title"),
                 rs.getString("contact_body"),
                 rs.getString("contact_tagline"),
-                rs.getString("footer_line")));
+                rs.getString("footer_line"),
+                rs.getString("contact_phone"),
+                rs.getString("contact_email"),
+                rs.getString("whatsapp_number"),
+                rs.getString("trusted_clients")));
   }
 
   private List<SiteDtos.Stat> stats() {

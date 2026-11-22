@@ -35,7 +35,11 @@ class SiteDtos {
       @NotBlank @Size(max = 200) String contactTitle,
       @NotBlank @Size(max = 1000) String contactBody,
       @NotBlank @Size(max = 200) String contactTagline,
-      @NotBlank @Size(max = 200) String footerLine) {}
+      @NotBlank @Size(max = 200) String footerLine,
+      @Size(max = 30) String contactPhone,
+      @Size(max = 160) String contactEmail,
+      @Size(max = 20) String whatsappNumber,
+      @Size(max = 500) String trustedClients) {}
 
   record Stat(UUID id, String value, String label) {}
 

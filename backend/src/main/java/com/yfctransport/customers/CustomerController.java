@@ -45,9 +45,12 @@ class CustomerController {
   @GetMapping
   Page<CustomerView> list(
       @RequestParam(defaultValue = "0") @Min(0) int page,
-      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-    return customers
-        .findAll(PageRequest.of(page, size, Sort.by("createdAt").descending()))
-        .map(CustomerView::of);
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+      @RequestParam(required = false) @Size(max = 120) String q) {
+    var pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+    if (q != null && !q.isBlank()) {
+      return customers.search(q.strip(), pageable).map(CustomerView::of);
+    }
+    return customers.findAll(pageable).map(CustomerView::of);
   }
 }

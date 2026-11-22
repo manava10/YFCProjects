@@ -4,6 +4,7 @@ import com.yfctransport.audit.AuditTrail;
 import com.yfctransport.customers.CustomerRegistry;
 import com.yfctransport.suppliers.SupplierRegistry;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
 import org.springframework.http.HttpStatus;
@@ -289,5 +290,127 @@ class PartyFinanceService {
     ledger.putAll(
         balance((String) profile.get("party_type"), (BigDecimal) ledger.get("closingBalance")));
     return ledger;
+  }
+
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+  Map<String, Object> ageing(LocalDate asOf, String partyType) {
+    String filter =
+        partyType == null
+            ? ""
+            : partyType.equals("CUSTOMER")
+                ? " and p.kind='SALES_ORDER'"
+                : " and p.kind='PURCHASE_RECEIPT'";
+    var rows =
+        db.queryForList(
+            "select p.id,p.kind,p.party_id,p.party_name,p.prepared_on,t.payable_total,"
+                + " coalesce((select sum(a.amount) from invoice_allocations a where"
+                + " a.preparation_id=p.id and a.status='ACTIVE'),0) as allocated_amount,"
+                + " coalesce(pf.payment_terms_days,0) as payment_terms_days"
+                + " from billing_preparations p"
+                + " join billing_tax_assessments t on t.preparation_id=p.id"
+                + " join journals j on j.id=p.journal_id"
+                + " left join party_financial_profiles pf on"
+                + " (p.kind='SALES_ORDER' and pf.party_type='CUSTOMER' and pf.customer_id=p.party_id)"
+                + " or (p.kind='PURCHASE_RECEIPT' and pf.party_type='SUPPLIER' and"
+                + " pf.supplier_id=p.party_id)"
+                + " where p.status='READY' and j.status='POSTED' and p.prepared_on<=?"
+                + " and not exists(select 1 from journals r where r.reverses_id=j.id and"
+                + " r.status='POSTED')"
+                + filter
+                + " order by p.party_name,p.prepared_on,p.id",
+            asOf);
+
+    record BucketKey(String type, UUID partyId) {}
+    var byParty = new LinkedHashMap<BucketKey, Map<String, Object>>();
+    BigDecimal zero = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    BigDecimal totCurrent = zero,
+        tot30 = zero,
+        tot60 = zero,
+        tot90 = zero,
+        totOver = zero,
+        totAll = zero;
+    int totBills = 0;
+
+    for (var raw : rows) {
+      var r = normalize(raw);
+      BigDecimal payable = ((BigDecimal) r.get("payable_total")).setScale(2, RoundingMode.HALF_UP);
+      BigDecimal allocated =
+          ((BigDecimal) r.get("allocated_amount")).setScale(2, RoundingMode.HALF_UP);
+      BigDecimal outstanding = payable.subtract(allocated);
+      if (outstanding.signum() <= 0) continue;
+
+      String type = "SALES_ORDER".equals(r.get("kind")) ? "CUSTOMER" : "SUPPLIER";
+      UUID partyId = (UUID) r.get("party_id");
+      LocalDate preparedOn = toLocalDate(r.get("prepared_on"));
+      int terms = ((Number) r.get("payment_terms_days")).intValue();
+      LocalDate dueDate = preparedOn.plusDays(terms);
+      long overdue = java.time.temporal.ChronoUnit.DAYS.between(dueDate, asOf);
+
+      var key = new BucketKey(type, partyId);
+      var entry =
+          byParty.computeIfAbsent(
+              key,
+              k -> {
+                var m = new LinkedHashMap<String, Object>();
+                m.put("party_type", type);
+                m.put("party_id", partyId);
+                m.put("party_name", r.get("party_name"));
+                m.put("payment_terms_days", terms);
+                m.put("open_bills", 0);
+                m.put("current", zero);
+                m.put("days_1_30", zero);
+                m.put("days_31_60", zero);
+                m.put("days_61_90", zero);
+                m.put("days_90_plus", zero);
+                m.put("total_outstanding", zero);
+                return m;
+              });
+
+      String bucket;
+      if (overdue <= 0) {
+        bucket = "current";
+        totCurrent = totCurrent.add(outstanding);
+      } else if (overdue <= 30) {
+        bucket = "days_1_30";
+        tot30 = tot30.add(outstanding);
+      } else if (overdue <= 60) {
+        bucket = "days_31_60";
+        tot60 = tot60.add(outstanding);
+      } else if (overdue <= 90) {
+        bucket = "days_61_90";
+        tot90 = tot90.add(outstanding);
+      } else {
+        bucket = "days_90_plus";
+        totOver = totOver.add(outstanding);
+      }
+
+      entry.put(bucket, ((BigDecimal) entry.get(bucket)).add(outstanding));
+      entry.put("total_outstanding", ((BigDecimal) entry.get("total_outstanding")).add(outstanding));
+      entry.put("open_bills", ((Integer) entry.get("open_bills")) + 1);
+      totAll = totAll.add(outstanding);
+      totBills++;
+    }
+
+    var totals = new LinkedHashMap<String, Object>();
+    totals.put("open_bills", totBills);
+    totals.put("current", totCurrent);
+    totals.put("days_1_30", tot30);
+    totals.put("days_31_60", tot60);
+    totals.put("days_61_90", tot90);
+    totals.put("days_90_plus", totOver);
+    totals.put("total_outstanding", totAll);
+
+    var result = new LinkedHashMap<String, Object>();
+    result.put("as_of", asOf);
+    result.put("currency", "INR");
+    result.put("totals", totals);
+    result.put("parties", new ArrayList<>(byParty.values()));
+    return result;
+  }
+
+  private LocalDate toLocalDate(Object v) {
+    if (v instanceof LocalDate d) return d;
+    if (v instanceof java.sql.Date d) return d.toLocalDate();
+    return ((java.sql.Timestamp) v).toLocalDateTime().toLocalDate();
   }
 }

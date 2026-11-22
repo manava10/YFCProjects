@@ -15,8 +15,14 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
 server:
   port: ${PORT:8080}
+  shutdown: graceful
+  compression:
+    enabled: true
+    min-response-size: 1024
   servlet:
     session:
       cookie:
@@ -35,4 +41,25 @@ yfc:
   database:
     auth-mode: ${DB_AUTH_MODE:password}
     aws-region: ${AWS_REGION:}
-    maximum-pool-size: ${DB_POOL_MAX_SIZE:5}
+    maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+  session:
+    ttl-hours: ${SESSION_TTL_HOURS:12}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    trust-proxy: ${RATE_LIMIT_TRUST_PROXY:false}
+    login-per-minute: ${RATE_LIMIT_LOGIN_PER_MIN:25}
+    auth-per-minute: ${RATE_LIMIT_AUTH_PER_MIN:10}
+    public-write-per-minute: ${RATE_LIMIT_PUBLIC_WRITE_PER_MIN:15}
+    public-read-per-minute: ${RATE_LIMIT_PUBLIC_READ_PER_MIN:120}
+  documents:
+    storage: ${DOCUMENTS_STORAGE:DATABASE}
+    local-dir: ${DOCUMENTS_LOCAL_DIR:./data/documents}
+    s3:
+      bucket: ${DOCUMENTS_S3_BUCKET:}
+      region: ${DOCUMENTS_S3_REGION:${AWS_REGION:ap-south-2}}
+      prefix: ${DOCUMENTS_S3_PREFIX:yfc-documents}
+      endpoint: ${DOCUMENTS_S3_ENDPOINT:}
+  alerts:
+    scheduling-enabled: ${ALERTS_SCHEDULING_ENABLED:true}
+    digest-cron: ${ALERTS_DIGEST_CRON:0 0 8 * * *}
+    webhook-url: ${ALERTS_WEBHOOK_URL:}

@@ -22,18 +22,21 @@ class AccountService implements ExternalAccounts {
   private final IdentityGuardRepository guard;
   private final PasswordEncoder encoder;
   private final AuditTrail audit;
+  private final PersistentSessionStore persistentSessions;
 
   AccountService(
       AccountRepository accounts,
       PasswordResetRepository resets,
       IdentityGuardRepository guard,
       PasswordEncoder encoder,
-      AuditTrail audit) {
+      AuditTrail audit,
+      PersistentSessionStore persistentSessions) {
     this.accounts = accounts;
     this.resets = resets;
     this.guard = guard;
     this.encoder = encoder;
     this.audit = audit;
+    this.persistentSessions = persistentSessions;
   }
 
   @Override
@@ -121,6 +124,7 @@ class AccountService implements ExternalAccounts {
       a.role = role;
       a.enabled = enabled;
       a.authVersion++;
+      persistentSessions.revokeAccount(a.id);
       for (PasswordReset reset : resets.findByAccountIdAndUsedFalse(a.id)) reset.used = true;
       audit.record("USER_ACCESS_CHANGED", "USER", a.id, before + " -> " + role + "/" + enabled);
     }
@@ -168,6 +172,7 @@ class AccountService implements ExternalAccounts {
     if (!a.enabled) throw new IllegalArgumentException("Invalid or expired reset token");
     a.passwordHash = encoder.encode(password);
     a.authVersion++;
+    persistentSessions.revokeAccount(a.id);
     for (PasswordReset prior : resets.findByAccountIdAndUsedFalse(a.id)) prior.used = true;
     audit.record(
         "PASSWORD_RESET_COMPLETED", "USER", a.id, "Password changed; previous sessions revoked");

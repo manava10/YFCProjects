@@ -5,20 +5,24 @@ import { Plus } from "lucide-react";
 import { request, type RecordData } from "./api";
 import { short, today, val, yardLabel } from "./lib";
 import { Documents } from "./documents";
+import { CsvExportButton, PrintableChallan } from "./print-docs";
 import {
   ActiveSelect,
   Choices,
   DataTable,
   ErrorBox,
   Field,
+  FilterBar,
   Heading,
   IdField,
   Notice,
   Pager,
+  queryPath,
   RecordView,
   ReviewBox,
   SaveForm,
   useAccess,
+  useDebounced,
   usePaged,
 } from "./ui";
 
@@ -44,6 +48,7 @@ export function Fleet() {
         {[
           ["trucks", "Trucks"],
           ["drivers", "Drivers"],
+          ["maintenance", "Maintenance & Tyres"],
           ["alerts", "Compliance"],
         ].map(([id, caption]) => (
           <button key={id} className={tab === id ? "tab active" : "tab"} onClick={() => setTab(id)}>
@@ -129,9 +134,188 @@ export function Fleet() {
               ]}
             />
           </div>
-          {admin && <p className="muted">These lists are not scheduled messages.</p>}
+          {admin && <p className="muted">See Alerts &amp; digest for automated daily compliance and maintenance schedules.</p>}
         </>
       )}
+      {tab === "maintenance" && <MaintenanceTab write={write} />}
+    </>
+  );
+}
+
+function MaintenanceTab({ write }: { write: boolean }) {
+  const [truckFilter, setTruckFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const logs = usePaged(
+    "fleet-maintenance",
+    queryPath("/api/v1/fleet/maintenance", {
+      truckId: truckFilter,
+      category: categoryFilter,
+      branchId: branchFilter,
+    }),
+  );
+  const due = useQuery({
+    queryKey: ["fleet-maintenance-due"],
+    queryFn: () => request<RecordData[]>("/api/v1/fleet/maintenance-due?days=30&kmMargin=1000"),
+  });
+  return (
+    <>
+      {due.data && due.data.length > 0 && (
+        <Notice
+          title={`Preventive maintenance due (${due.data.length} truck service${due.data.length === 1 ? "" : "s"})`}
+        >
+          {due.data
+            .map(
+              (a) =>
+                `${a.truck_registration} · ${a.category}${a.overdue ? " (OVERDUE)" : ""}${a.next_due_date ? ` due ${a.next_due_date}` : ""}${a.next_due_odometer_km ? ` / ${a.next_due_odometer_km} km` : ""}`,
+            )
+            .join(" · ")}
+        </Notice>
+      )}
+      {write && (
+        <SaveForm
+          title="Record preventive maintenance, tyre or service log"
+          path="/api/v1/fleet/maintenance"
+          prepare={(body) => ({
+            ...body,
+            odometerKm: Number(body.odometerKm),
+            nextDueOdometerKm: body.nextDueOdometerKm ? Number(body.nextDueOdometerKm) : undefined,
+            nextDueDate: body.nextDueDate || undefined,
+            invoiceReference: body.invoiceReference || undefined,
+            notes: body.notes || undefined,
+          })}
+        >
+          <div className="form-grid">
+            <Field label="Owned truck">
+              <select name="truckId" required>
+                <Choices
+                  path="/api/v1/trucks"
+                  empty="Select truck"
+                  labelOf={(row) => String(row.registration)}
+                />
+              </select>
+            </Field>
+            <Field label="Service category">
+              <select name="category" required defaultValue="PREVENTIVE_SERVICE">
+                <option value="PREVENTIVE_SERVICE">Preventive service</option>
+                <option value="TYRE">Tyre replacement / repair</option>
+                <option value="BRAKE_CLUTCH">Brake &amp; clutch</option>
+                <option value="ENGINE">Engine &amp; gearbox</option>
+                <option value="BODY_HYDRAULIC">Tipper body / hydraulic</option>
+                <option value="INSPECTION">Safety inspection</option>
+                <option value="OTHER">Other maintenance</option>
+              </select>
+            </Field>
+            <Field label="Service date">
+              <input name="serviceDate" type="date" defaultValue={today()} required />
+            </Field>
+            <Field label="Odometer (km)">
+              <input name="odometerKm" type="number" min="0" step="1" required />
+            </Field>
+            <Field label="Next service due date (optional)">
+              <input name="nextDueDate" type="date" />
+            </Field>
+            <Field label="Next due odometer km (optional)">
+              <input name="nextDueOdometerKm" type="number" min="0" step="1" />
+            </Field>
+            <Field label="Workshop / Vendor">
+              <input name="vendorName" required maxLength={160} placeholder="e.g. Apollo Tyre Care" />
+            </Field>
+            <Field label="Bill / Invoice ref (optional)">
+              <input name="invoiceReference" maxLength={120} />
+            </Field>
+            <Field label="Cost (INR)">
+              <input name="costInr" type="number" min="0" step="0.01" required />
+            </Field>
+          </div>
+          <Field label="Work done / parts replaced (optional)">
+            <textarea name="notes" maxLength={1000} />
+          </Field>
+        </SaveForm>
+      )}
+      <ErrorBox error={logs.q.error || due.error} />
+      <div className="panel">
+        <div className="panel-heading">
+          <h3>Service &amp; tyre history</h3>
+          <CsvExportButton
+            filename={`yfc-fleet-maintenance-${today()}.csv`}
+            headers={[
+              "Truck",
+              "Category",
+              "Date",
+              "Odometer (km)",
+              "Next Due Date",
+              "Next Due (km)",
+              "Vendor",
+              "Cost (INR)",
+            ]}
+            rows={logs.items.map((r) => [
+              String(r.truck_registration ?? ""),
+              String(r.category ?? ""),
+              String(r.service_date ?? ""),
+              String(r.odometer_km ?? ""),
+              String(r.next_due_date ?? ""),
+              String(r.next_due_odometer_km ?? ""),
+              String(r.vendor_name ?? ""),
+              String(r.cost_inr ?? "0"),
+            ])}
+          />
+        </div>
+        <FilterBar
+          active={!!(truckFilter || categoryFilter || branchFilter)}
+          onReset={() => {
+            setTruckFilter("");
+            setCategoryFilter("");
+            setBranchFilter("");
+          }}
+        >
+          <select
+            aria-label="Filter maintenance by truck"
+            value={truckFilter}
+            onChange={(e) => setTruckFilter(e.target.value)}
+          >
+            <Choices
+              path="/api/v1/trucks"
+              empty="All trucks"
+              labelOf={(row) => String(row.registration)}
+            />
+          </select>
+          <select
+            aria-label="Filter maintenance by category"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="">All categories</option>
+            <option value="PREVENTIVE_SERVICE">Preventive service</option>
+            <option value="TYRE">Tyre</option>
+            <option value="BRAKE_CLUTCH">Brake &amp; clutch</option>
+            <option value="ENGINE">Engine</option>
+            <option value="BODY_HYDRAULIC">Body / hydraulic</option>
+            <option value="INSPECTION">Inspection</option>
+            <option value="OTHER">Other</option>
+          </select>
+          <select
+            aria-label="Filter maintenance by branch"
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+          >
+            <Choices path="/api/v1/branches" empty="All branches" />
+          </select>
+        </FilterBar>
+        <DataTable
+          rows={logs.items}
+          columns={[
+            { label: "Truck", keys: ["truck_registration"] },
+            { label: "Category", keys: ["category"] },
+            { label: "Service Date", keys: ["service_date"] },
+            { label: "Odometer (km)", keys: ["odometer_km"] },
+            { label: "Next Due", keys: ["next_due_date"] },
+            { label: "Vendor", keys: ["vendor_name"] },
+            { label: "Cost (₹)", keys: ["cost_inr"] },
+          ]}
+        />
+        <Pager page={logs.page} setPage={logs.setPage} hasNext={logs.hasNext} />
+      </div>
     </>
   );
 }
@@ -268,8 +452,14 @@ function DriverEditor() {
   return (
     <div className="panel form-panel">
       <h3>Update a driver</h3>
-      <Field label="Driver id">
-        <input value={id} onChange={(event) => setId(event.target.value)} placeholder="Paste a driver id" />
+      <Field label="Select driver">
+        <select value={id} onChange={(event) => setId(event.target.value)}>
+          <Choices
+            path="/api/v1/drivers"
+            empty="Choose a driver to edit"
+            labelOf={(row) => `${row.name}${row.mobile ? ` · ${row.mobile}` : ""}`}
+          />
+        </select>
       </Field>
       <ErrorBox error={q.error} />
       {q.data && (
@@ -284,7 +474,24 @@ function DriverEditor() {
 export function Trips() {
   const write = useAccess().write;
   const [create, setCreate] = useState(false);
-  const list = usePaged("trips", "/api/v1/trips");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const debouncedSearch = useDebounced(search);
+  const list = usePaged(
+    "trips",
+    queryPath("/api/v1/trips", {
+      q: debouncedSearch,
+      status: statusFilter,
+      source: sourceFilter,
+      branchId: branchFilter,
+    }),
+  );
+  const ewayAlerts = useQuery({
+    queryKey: ["eway-bill-alerts"],
+    queryFn: () => request<RecordData[]>("/api/v1/trips/eway-bill-alerts?hours=24"),
+  });
   return (
     <>
       <Heading
@@ -292,16 +499,100 @@ export function Trips() {
         title="One load. One truck. One driver."
         description="Allocate from a yard reservation, a direct purchase, or a transport-only order."
         action={
-          write && (
-            <button onClick={() => setCreate((value) => !value)}>
-              <Plus size={16} /> Allocate trip
-            </button>
-          )
+          <div className="heading-action">
+            <CsvExportButton
+              filename={`yfc-trips-${today()}.csv`}
+              headers={[
+                "Trip",
+                "Truck",
+                "Driver",
+                "Source",
+                "Planned (t)",
+                "E-Way Bill",
+                "Status",
+                "Planned Date",
+              ]}
+              rows={list.items.map((r) => [
+                short(String(r.id)),
+                String(val(r, "truck_registration", "truckRegistration") ?? ""),
+                String(val(r, "driver_name", "driverName") ?? ""),
+                String(val(r, "source") ?? ""),
+                String(val(r, "planned_quantity", "plannedQuantity") ?? ""),
+                String(val(r, "eway_bill_number", "ewayBillNumber") ?? ""),
+                String(val(r, "status") ?? ""),
+                String(val(r, "planned_date", "plannedDate") ?? ""),
+              ])}
+            />
+            {write && (
+              <button onClick={() => setCreate((value) => !value)}>
+                <Plus size={16} /> Allocate trip
+              </button>
+            )}
+          </div>
         }
       />
+      {ewayAlerts.data && ewayAlerts.data.length > 0 && (
+        <Notice title={`E-Way Bill expiry alert (${ewayAlerts.data.length} active trip${ewayAlerts.data.length === 1 ? "" : "s"})`}>
+          {ewayAlerts.data
+            .map(
+              (a) =>
+                `${a.truck_registration} (${a.eway_bill_number}${a.expired ? " — EXPIRED" : " — expiring < 24h"})`,
+            )
+            .join(" · ")}
+        </Notice>
+      )}
       {create && <AllocateTrip />}
-      <ErrorBox error={list.q.error} />
+      <ErrorBox error={list.q.error || ewayAlerts.error} />
       <div className="panel">
+        <FilterBar
+          active={!!(search || statusFilter || sourceFilter || branchFilter)}
+          onReset={() => {
+            setSearch("");
+            setStatusFilter("");
+            setSourceFilter("");
+            setBranchFilter("");
+          }}
+        >
+          <input
+            type="search"
+            aria-label="Search trips"
+            placeholder="Search truck, driver, or E-Way Bill…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <select
+            aria-label="Filter trips by status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="ALLOCATED">Allocated</option>
+            <option value="LOADING">Loading</option>
+            <option value="LOADED">Loaded</option>
+            <option value="DISPATCHED">Dispatched</option>
+            <option value="ARRIVED">Arrived</option>
+            <option value="UNLOADING">Unloading</option>
+            <option value="DELIVERED">Delivered</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+          <select
+            aria-label="Filter trips by source"
+            value={sourceFilter}
+            onChange={(event) => setSourceFilter(event.target.value)}
+          >
+            <option value="">All sources</option>
+            <option value="YARD">Yard</option>
+            <option value="DIRECT">Direct</option>
+            <option value="TRANSPORT">Transport</option>
+          </select>
+          <select
+            aria-label="Filter trips by branch"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            <Choices path="/api/v1/branches" empty="All branches" />
+          </select>
+        </FilterBar>
         <div className="table-wrap">
           <table>
             <thead>
@@ -310,6 +601,7 @@ export function Trips() {
                 <th>Truck</th>
                 <th>Driver</th>
                 <th>Source</th>
+                <th>E-Way Bill</th>
                 <th>Planned</th>
                 <th>Status</th>
               </tr>
@@ -323,6 +615,7 @@ export function Trips() {
                   <td>{String(val(row, "truck_registration", "truckRegistration") ?? "—")}</td>
                   <td>{String(val(row, "driver_name", "driverName") ?? "—")}</td>
                   <td>{String(val(row, "source") ?? "—")}</td>
+                  <td>{String(val(row, "eway_bill_number", "ewayBillNumber") ?? "—")}</td>
                   <td>{String(val(row, "planned_date", "plannedDate") ?? "—")}</td>
                   <td>{String(val(row, "status") ?? "—")}</td>
                 </tr>
@@ -399,13 +692,28 @@ function AllocateTrip() {
           </select>
         </Field>
         {source === "YARD" && (
-          <Field label="Reservation id">
-            <input name="reservationId" required />
+          <Field label="Stock reservation">
+            <select name="reservationId" required>
+              <Choices
+                path="/api/v1/stock-reservations"
+                empty="Select stock reservation"
+                labelOf={(r) => `${short(r.id)} · ${r.quantity ?? ""} t`}
+              />
+            </select>
           </Field>
         )}
         {source === "DIRECT" && (
-          <Field label="Purchase id">
-            <input name="purchaseId" required />
+          <Field label="Direct purchase">
+            <select name="purchaseId" required>
+              <Choices
+                path="/api/v1/purchases"
+                empty="Select direct purchase"
+                filter={(r) => r.destination === "DIRECT" && r.status === "OPEN"}
+                labelOf={(r) =>
+                  `${short(r.id)} · ${r.supplier_name ?? r.supplierName ?? ""} · ${r.material_name ?? r.materialName ?? ""} (${r.quantity ?? ""} t)`
+                }
+              />
+            </select>
           </Field>
         )}
         <Field label="Planned tonnes">
@@ -433,7 +741,8 @@ const NEXT: Record<string, { path: string; label: string; kind: "event" | "load"
 };
 
 export function Trip() {
-  const write = useAccess().write;
+  const { write, admin } = useAccess();
+  const [overrideCredit, setOverrideCredit] = useState(false);
   const { id = "" } = useParams();
   const q = useQuery({
     queryKey: ["trip", id],
@@ -463,6 +772,7 @@ export function Trip() {
             title={String(val(row, "truck_registration", "truckRegistration") ?? "Trip")}
             description={String(val(row, "driver_name", "driverName") ?? "")}
           />
+          <PrintableChallan trip={row} />
           <div className="panel form-panel">
             <RecordView row={row} />
           </div>
@@ -470,9 +780,56 @@ export function Trip() {
             <h3>Approved operating cost</h3>
             <RecordView row={costs.data} />
           </div>
+          {write && status !== "CANCELLED" && (
+            <SaveForm
+              title="E-Way Bill (Inter-state / > ₹50,000 GST movement)"
+              path={`/api/v1/trips/${id}/eway-bill`}
+              method="PUT"
+              prepare={(body) => ({
+                ewayBillNumber: String(body.ewayBillNumber ?? "").trim().toUpperCase(),
+                validUntil: String(body.validUntil ?? "").endsWith("Z") || String(body.validUntil ?? "").includes("+")
+                  ? String(body.validUntil)
+                  : `${String(body.validUntil)}:00+05:30`,
+              })}
+            >
+              <div className="form-grid">
+                <Field label="E-Way Bill Number (12 digits)">
+                  <input
+                    name="ewayBillNumber"
+                    required
+                    pattern="[A-Za-z0-9\-]{8,20}"
+                    maxLength={20}
+                    placeholder="e.g. 141008567890"
+                    defaultValue={String(val(row, "eway_bill_number", "ewayBillNumber") ?? "")}
+                  />
+                </Field>
+                <Field label="Valid Until (Asia/Kolkata)">
+                  <input
+                    name="validUntil"
+                    type="datetime-local"
+                    required
+                  />
+                </Field>
+              </div>
+            </SaveForm>
+          )}
           {write && step && (
-            <SaveForm title={step.label} path={`/api/v1/trips/${id}/${step.path}`}>
+            <SaveForm
+              title={step.label}
+              path={`/api/v1/trips/${id}/${step.path}${step.path === "dispatch" && admin && overrideCredit ? "?overrideCreditLimit=true" : ""}`}
+            >
               <IdField name="eventId" caption="Event id" />
+              {step.path === "dispatch" && admin && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: "auto" }}
+                    checked={overrideCredit}
+                    onChange={(event) => setOverrideCredit(event.target.checked)}
+                  />
+                  Override customer credit limit (Super Admin — audited)
+                </label>
+              )}
               {step.kind === "load" && <Weights />}
               {step.kind === "deliver" && <Delivery />}
             </SaveForm>

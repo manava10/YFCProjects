@@ -10,3 +10,11 @@ spring:
 yfc:
   database:
     auth-mode: password
+  rate-limit:
+    enabled: true
+    login-per-minute: 500
+    auth-per-minute: 500
+    public-write-per-minute: 500
+    public-read-per-minute: 1000
+  alerts:
+    scheduling-enabled: false

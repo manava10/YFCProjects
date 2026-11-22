@@ -379,4 +379,74 @@ class IdentityJourneyTest {
         .isEqualTo("admin");
     mvc.perform(get("/api/v1/auth/me")).andExpect(status().isUnauthorized());
   }
+
+  @Test
+  void portalLoginEnforcesStaffAndCustomerSeparation() throws Exception {
+    var adminSession = admin();
+    String customerUser = username();
+    create(adminSession, customerUser, "CUSTOMER");
+
+    // Staff blocked on CUSTOMER portal and session invalidated
+    var staffOnCustomer =
+        mvc.perform(
+                post("/login")
+                    .with(csrf())
+                    .param("username", "admin")
+                    .param("password", "local-test-password-only")
+                    .param("portal", "CUSTOMER"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("/staff")))
+            .andReturn();
+    var badStaffSession = (MockHttpSession) staffOnCustomer.getRequest().getSession(false);
+    if (badStaffSession != null) {
+      assertThat(badStaffSession.isInvalid()).isTrue();
+    }
+
+    // Staff succeeds on STAFF portal
+    var staffOnStaff =
+        mvc.perform(
+                post("/login")
+                    .with(csrf())
+                    .param("username", "admin")
+                    .param("password", "local-test-password-only")
+                    .param("portal", "STAFF"))
+            .andExpect(status().isNoContent())
+            .andReturn();
+    mvc.perform(
+            get("/api/v1/auth/me")
+                .session((MockHttpSession) staffOnStaff.getRequest().getSession(false)))
+        .andExpect(status().isOk());
+
+    // Customer blocked on STAFF portal and session invalidated
+    var customerOnStaff =
+        mvc.perform(
+                post("/login")
+                    .with(csrf())
+                    .param("username", customerUser)
+                    .param("password", PASSWORD)
+                    .param("portal", "STAFF"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("/signin")))
+            .andReturn();
+    var badCustomerSession = (MockHttpSession) customerOnStaff.getRequest().getSession(false);
+    if (badCustomerSession != null) {
+      assertThat(badCustomerSession.isInvalid()).isTrue();
+    }
+
+    // Customer succeeds on CUSTOMER portal
+    var customerOnCustomer =
+        mvc.perform(
+                post("/login")
+                    .with(csrf())
+                    .param("username", customerUser)
+                    .param("password", PASSWORD)
+                    .param("portal", "CUSTOMER"))
+            .andExpect(status().isNoContent())
+            .andReturn();
+    mvc.perform(
+            get("/api/v1/auth/me")
+                .session((MockHttpSession) customerOnCustomer.getRequest().getSession(false)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roles[0]").value("ROLE_CUSTOMER"));
+  }
 }

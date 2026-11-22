@@ -56,6 +56,19 @@ class FuelController {
     return RateView.of(created);
   }
 
+  @GetMapping("/rates")
+  org.springframework.data.domain.Page<RateView> listRates(
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return rates
+        .findAll(
+            org.springframework.data.domain.PageRequest.of(
+                page,
+                size,
+                org.springframework.data.domain.Sort.by("effectiveDate").descending()))
+        .map(RateView::of);
+  }
+
   @GetMapping("/rates/{id}")
   RateView rate(@PathVariable UUID id) {
     return RateView.of(

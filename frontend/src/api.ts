@@ -82,25 +82,32 @@ export async function binary(path: string) {
   }
   return response.blob();
 }
-export async function login(username: string, password: string) {
+export async function login(
+  username: string,
+  password: string,
+  portal?: "CUSTOMER" | "STAFF",
+) {
   await token();
   const headers = new Headers({
     "Content-Type": "application/x-www-form-urlencoded",
   });
   headers.set(csrf!.headerName, csrf!.token);
+  const body = new URLSearchParams({ username, password });
+  if (portal) body.set("portal", portal);
   const response = await fetch("/login", {
     method: "POST",
     headers,
     credentials: "same-origin",
-    body: new URLSearchParams({ username, password }),
+    body,
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => null);
+    const resBody = await response.json().catch(() => null);
+    if (response.status === 403) csrf = undefined;
     const server =
-      typeof body?.detail === "string"
-        ? body.detail
-        : typeof body?.message === "string"
-          ? body.message
+      typeof resBody?.detail === "string"
+        ? resBody.detail
+        : typeof resBody?.message === "string"
+          ? resBody.message
           : "";
     throw new ApiError(
       response.status,

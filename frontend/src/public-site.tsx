@@ -1,8 +1,42 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Menu, X } from "lucide-react";
-import { ApiError, post, request } from "./api";
+import {
+  ArrowRight,
+  Award,
+  Building2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Download,
+  Eye,
+  EyeOff,
+  FileText,
+  Globe,
+  Headphones,
+  Mail,
+  MapPin,
+  Menu,
+  MessageCircle,
+  Package,
+  Phone,
+  PhoneCall,
+  Receipt,
+  Search,
+  ShieldCheck,
+  TrendingUp,
+  Truck,
+  Users,
+  X,
+} from "lucide-react";
+import { login, logout, post, request } from "./api";
 import { uuid } from "./lib";
 import "./public-site.css";
 
@@ -25,7 +59,12 @@ type Profile = {
   contactBody: string;
   contactTagline: string;
   footerLine: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  whatsappNumber?: string;
+  trustedClients?: string;
 };
+
 type Stat = { id: string; value: string; label: string };
 type Material = {
   id: string;
@@ -45,14 +84,14 @@ type Plant = {
   active: boolean;
 };
 type Destination = { id: string; name: string; active: boolean };
-type Lane = { plantId: string; destinationId: string; rate: number };
+type Freight = { plantId: string; destinationId: string; rate: number };
 type Catalog = {
   profile: Profile;
   stats: Stat[];
   materials: Material[];
   plants: Plant[];
   destinations: Destination[];
-  freight: Lane[];
+  freight: Freight[];
 };
 type Ticket = {
   reference: string;
@@ -68,14 +107,34 @@ type Ticket = {
   stageLabel: string;
 };
 
-const stages = ["Confirmed", "Loading", "On the Way", "Delivered"];
-const nav = [
-  ["#about", "About Us"],
+const STAGES = ["Confirmed", "Loading", "On the Way", "Delivered"];
+const STAGE_KEYS = ["CONFIRMED", "LOADING", "ON_THE_WAY", "DELIVERED"];
+
+const SERVICES = [
+  "Building Material Supply — graded crushed stone, aggregates & manufactured sand",
+  "Transportation & Logistics — scheduled tipper movement across Haryana, Rajasthan & NCR",
+  "Plant & Fleet Management — direct crusher-head loading with zero broker handoffs",
+  "Project Logistic Support — continuous bulk supply for highways, townships & RMC plants",
+  "Bulk Material Delivery — computerised weighbridge slips & GST billing on every trip",
+];
+
+const WHY_POINTS = [
+  "Owned TATA Signa tipper fleet — dependable dispatch directly from our yards",
+  "Direct ex-crusher supply from Kotputli, Behror & Bhiwadi dispatch hubs",
+  "Computerised weighbridge slips & digital delivery challans on every trip",
+  "Transparent GST tax invoices & E-Way bill documentation",
+  "22+ years serving major infrastructure and real estate corridors",
+];
+
+const NAV_LINKS: [string, string][] = [
+  ["#top", "Home"],
+  ["#estimator", "Live Rates"],
   ["#materials", "Materials"],
-  ["#plants", "Our Plants"],
-  ["#rates", "Live Rates"],
+  ["#services", "Services"],
   ["#track", "Track Order"],
-  ["#contact", "Contact Us"],
+  ["#plants", "Plants"],
+  ["#about", "About Us"],
+  ["#contact", "Contact"],
 ];
 
 function inr(value: number) {
@@ -85,528 +144,421 @@ function inr(value: number) {
     maximumFractionDigits: 0,
   }).format(value);
 }
-function message(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
+
+function errMsg(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
-function PublicBar({ home }: { home: boolean }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [open]);
-  const links = nav.map(([href, label]) => [home ? href : `/${href}`, label]);
-  const quote = home ? "#order" : "/#order";
+function smoothScroll(id: string) {
+  document.getElementById(id)?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "instant"
+      : "smooth",
+  });
+}
+
+function statIconFor(label: string) {
+  const lower = label.toLowerCase();
+  if (lower.includes("year")) return Award;
+  if (lower.includes("trip") || lower.includes("ton")) return Truck;
+  if (lower.includes("client") || lower.includes("buyer")) return Users;
+  return Building2;
+}
+
+function YfcTriLogo({ to = "/" }: { to?: string }) {
   return (
-    <header className="topbar">
-      <div className="wrap">
-        <a className="brand" href={home ? "#top" : "/"}>
-          <strong>YFC</strong>
-          <span>TRANSPORT</span>
-        </a>
-        <nav className="menu" aria-label="Primary">
-          {links.map(([href, label]) => (
-            <a key={href} href={href}>
-              {label}
+    <Link className="yfc-tri-brand" to={to} aria-label="YFC Transport home">
+      <span className="yfc-tri-letters">
+        <span className="yfc-y">Y</span>
+        <span className="yfc-f">F</span>
+        <span className="yfc-c">C</span>
+      </span>
+      <span className="yfc-tri-sub">
+        <strong>TRANSPORT</strong>
+        <small>MATERIAL SUPPLY</small>
+      </span>
+    </Link>
+  );
+}
+
+function PublicHeader({
+  phone,
+  email,
+  home = true,
+}: {
+  phone: string;
+  email: string;
+  home?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const telHref = `tel:${phone.replace(/[^+0-9]/g, "")}`;
+  return (
+    <header className="pub-header">
+      <div className="pub-utility">
+        <div className="pub-wrap pub-utility-row">
+          <div className="pub-utility-left">
+            <span className="pub-since">Since 2004</span>
+            <span className="pub-sep">·</span>
+            <span className="pub-inline-icon">
+              <MapPin size={13} /> Pan India Delivery
+            </span>
+          </div>
+          <div className="pub-utility-right">
+            <a href={telHref} className="pub-inline-icon">
+              <Phone size={13} /> {phone}
             </a>
-          ))}
-        </nav>
-        <div className="bar-actions">
-          <Link className="staff-link" to="/staff">
-            Login
-          </Link>
-          <Link className="btn ghost" to="/signup">
-            Sign up
-          </Link>
-          <a className="btn" href={quote}>
-            Get Best Quote
-          </a>
+            <a href={`mailto:${email}`} className="pub-inline-icon">
+              <Mail size={13} /> {email}
+            </a>
+          </div>
         </div>
-        <button
-          type="button"
-          className="menu-toggle"
-          aria-expanded={open}
-          aria-label={open ? "Close menu" : "Open menu"}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? <X size={20} /> : <Menu size={20} />}
-        </button>
       </div>
-      {open ? (
-        <nav className="drawer" aria-label="Mobile">
-          {links.map(([href, label]) => (
-            <a key={href} href={href} onClick={() => setOpen(false)}>
-              {label}
+
+      <div className="pub-nav-bar">
+        <div className="pub-wrap pub-nav-row">
+          <YfcTriLogo to="/" />
+          <nav className="pub-nav-links" aria-label="Primary">
+            {NAV_LINKS.map(([href, label]) => (
+              <a key={href} href={home ? href : `/${href}`}>
+                {label}
+              </a>
+            ))}
+          </nav>
+          <div className="pub-nav-actions">
+            <Link className="pub-link-btn" to="/signin">
+              Login
+            </Link>
+            <Link className="pub-btn ghost sm" to="/signup">
+              Sign up
+            </Link>
+            <a className="pub-btn sm" href={home ? "#estimator" : "/#estimator"}>
+              Price Estimate
             </a>
-          ))}
-          <Link to="/signup" onClick={() => setOpen(false)}>
-            Sign up
-          </Link>
-          <a href={quote} onClick={() => setOpen(false)}>
-            Get Best Quote
-          </a>
-          <Link to="/staff" onClick={() => setOpen(false)}>
-            Login
-          </Link>
-        </nav>
-      ) : null}
+          </div>
+          <button
+            type="button"
+            className="pub-mobile-toggle"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
+        {open && (
+          <nav className="pub-mobile-drawer" aria-label="Mobile navigation">
+            {NAV_LINKS.map(([href, label]) => (
+              <a
+                key={href}
+                href={home ? href : `/${href}`}
+                onClick={() => setOpen(false)}
+              >
+                {label}
+              </a>
+            ))}
+            <div className="pub-mobile-cta">
+              <Link className="pub-btn ghost" to="/signin" onClick={() => setOpen(false)}>
+                Login
+              </Link>
+              <Link className="pub-btn" to="/signup" onClick={() => setOpen(false)}>
+                Sign up
+              </Link>
+            </div>
+          </nav>
+        )}
+      </div>
     </header>
   );
 }
 
 export function PublicSite() {
-  const site = useQuery({
+  const siteQuery = useQuery({
     queryKey: ["public-site"],
     queryFn: () => request<Catalog>("/api/v1/site"),
+    staleTime: 5 * 60_000,
   });
+  const catalog = siteQuery.data ?? null;
+  const error = siteQuery.error ? errMsg(siteQuery.error) : "";
   const [materialId, setMaterialId] = useState("");
   const [plantId, setPlantId] = useState("");
-  const [issued, setIssued] = useState("");
+  const [destinationId, setDestinationId] = useState("");
+  const [qty, setQty] = useState("20");
+  const [showEstimate, setShowEstimate] = useState(false);
+  const [estimateError, setEstimateError] = useState("");
+  const [prefillNote, setPrefillNote] = useState("");
+  const [showAllMaterials, setShowAllMaterials] = useState(false);
+  const [plantDropFilter, setPlantDropFilter] = useState("");
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const root = document.documentElement;
-    const previous = root.style.scrollBehavior;
-    root.style.scrollBehavior = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches
-      ? "auto"
-      : "smooth";
-    return () => {
-      root.style.scrollBehavior = previous;
-    };
-  }, []);
+    if (!catalog) return;
+    setMaterialId((v) => v || catalog.materials[0]?.id || "");
+    setPlantId((v) => v || catalog.plants[0]?.id || "");
+    setDestinationId((v) => v || catalog.destinations[0]?.id || "");
+  }, [catalog]);
 
-  if (site.isPending) {
-    return (
-      <div className="yfc-public">
-        <p className="wrap" style={{ paddingTop: 120 }}>
-          Opening the yard…
-        </p>
-      </div>
-    );
+  const phone = catalog?.profile.contactPhone || "+91 96672 89071";
+  const email = catalog?.profile.contactEmail || "sales@yfctransport.com";
+  const whatsapp = catalog?.profile.whatsappNumber || "919667289071";
+
+  const selectedMaterial = useMemo(
+    () =>
+      catalog?.materials.find((m) => m.id === materialId) ??
+      catalog?.materials[0],
+    [catalog, materialId],
+  );
+  const selectedPlant = useMemo(
+    () =>
+      catalog?.plants.find((p) => p.id === plantId) ?? catalog?.plants[0],
+    [catalog, plantId],
+  );
+  const pricedDestinations = useMemo(() => {
+    if (!catalog || !selectedPlant) return [];
+    return catalog.destinations.filter((d) => {
+      const rate = catalog.freight.find(
+        (l) => l.plantId === selectedPlant.id && l.destinationId === d.id,
+      )?.rate;
+      return rate != null && Number(rate) > 0;
+    });
+  }, [catalog, selectedPlant]);
+
+  const selectedDestination = useMemo(
+    () =>
+      pricedDestinations.find((d) => d.id === destinationId) ??
+      pricedDestinations[0],
+    [pricedDestinations, destinationId],
+  );
+
+  const estimate = useMemo(() => {
+    const tonnes = Number(qty);
+    const freightRaw =
+      catalog?.freight.find(
+        (l) =>
+          l.plantId === selectedPlant?.id &&
+          l.destinationId === selectedDestination?.id,
+      )?.rate ?? null;
+    const freight =
+      freightRaw != null && Number(freightRaw) > 0 ? Number(freightRaw) : null;
+    const landed =
+      selectedMaterial && freight != null
+        ? Number(selectedMaterial.rate) + freight
+        : null;
+    return {
+      tonnes: Number.isFinite(tonnes) ? tonnes : 0,
+      freight,
+      landed,
+      total:
+        landed != null && Number.isFinite(tonnes) && tonnes > 0
+          ? landed * tonnes
+          : null,
+    };
+  }, [catalog, selectedMaterial, selectedPlant, selectedDestination, qty]);
+
+  function handleCalculate(event: FormEvent) {
+    event.preventDefault();
+    const tonnes = Number(qty);
+    if (!selectedMaterial || !selectedPlant || !selectedDestination || estimate.freight == null) {
+      setEstimateError("Select a plant and delivery location with a published freight lane.");
+      return;
+    }
+    if (!Number.isFinite(tonnes) || tonnes < 1 || tonnes > 500) {
+      setEstimateError("Enter a quantity between 1 and 500 tonnes.");
+      return;
+    }
+    setEstimateError("");
+    setShowEstimate(true);
   }
-  if (site.isError || !site.data) {
+
+  function sendEstimateToEnquiry() {
+    if (!selectedMaterial || !selectedPlant || !selectedDestination) return;
+    const totalText = estimate.total != null ? inr(estimate.total) : "—";
+    setPrefillNote(
+      `Estimate enquiry: ${selectedMaterial.name}, ${estimate.tonnes} ton, ${selectedPlant.name} → ${selectedDestination.name} (indicative ${totalText} excl. GST)`,
+    );
+    smoothScroll("contact");
+  }
+
+  function downloadBrochure() {
+    const lines = [
+      "YFC TRANSPORT & MATERIALS — COMPANY PROFILE",
+      "============================================",
+      `Since 2004 · Pan India Building Material Supply & Owned-Fleet Logistics`,
+      `Phone / WhatsApp: ${phone}`,
+      `Email: ${email}`,
+      "",
+      "SERVICES:",
+      ...SERVICES.map((s) => `  • ${s}`),
+      "",
+      "PUBLISHED EX-PLANT MATERIAL RATES (INR / TONNE, EXCL. GST):",
+      ...(catalog?.materials ?? []).map(
+        (m) => `  • ${m.name} (${m.grade}) — ${inr(m.rate)}/ton — ${m.useText}`,
+      ),
+      "",
+      "LOADING PLANTS:",
+      ...(catalog?.plants ?? []).map((p) => `  • ${p.name} (${p.place}) — ${p.note}`),
+      "",
+      "Contact our dispatch desk for firm quotations and credit accounts.",
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "YFC-Transport-Company-Brochure.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (error) {
     return (
       <div className="yfc-public">
-        <main className="wrap" style={{ paddingTop: 120 }}>
-          <p className="kicker">YFC TRANSPORT</p>
-          <h1 style={{ fontSize: 48, marginTop: 12 }}>
-            We couldn’t load the website.
-          </h1>
-          <p className="status" style={{ marginTop: 16 }}>
-            {site.error instanceof ApiError
-              ? site.error.message
-              : "Please check your connection and try again."}
-          </p>
-          <p style={{ marginTop: 24, display: "flex", gap: 12 }}>
-            <button
-              className="btn"
-              disabled={site.isFetching}
-              onClick={() => {
-                void site.refetch();
-              }}
-            >
-              {site.isFetching ? "Retrying…" : "Try again"}
+        <PublicHeader phone={phone} email={email} />
+        <main className="pub-wrap pub-loading-box">
+          <p className="pub-kicker">PUBLIC SITE UNAVAILABLE</p>
+          <h1>Could not load the live desk card.</h1>
+          <p className="pub-muted">{error}</p>
+          <div className="pub-hero-actions" style={{ marginTop: 18 }}>
+            <button type="button" className="pub-btn" onClick={() => window.location.reload()}>
+              Try again
             </button>
-            <Link className="btn ghost" to="/staff">
-              Login
+            <Link className="pub-btn ghost" to="/signin">
+              Customer Portal Login
             </Link>
-          </p>
+            <Link className="pub-btn ghost" to="/staff">
+              Staff ERP Login
+            </Link>
+          </div>
         </main>
       </div>
     );
   }
 
-  const catalog = site.data;
-  const chosenMaterial = materialId || catalog.materials[0]?.id || "";
-  const chosenPlant = plantId || catalog.plants[0]?.id || "";
-
-  return (
-    <div className="yfc-public">
-      <a className="skip-content" href="#public-content">
-        Skip to content
-      </a>
-      <PublicBar home />
-      <main id="public-content" tabIndex={-1}>
-        <Hero catalog={catalog} />
-        <Stats stats={catalog.stats} />
-        <About profile={catalog.profile} />
-        <Materials
-          materials={catalog.materials}
-          onPick={(id) => {
-            setMaterialId(id);
-            document
-              .getElementById("order")
-              ?.scrollIntoView({
-                behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
-                  .matches
-                  ? "instant"
-                  : "smooth",
-              });
-          }}
-        />
-        <Plants
-          plants={catalog.plants}
-          onPick={(id) => {
-            setPlantId(id);
-            document
-              .getElementById("order")
-              ?.scrollIntoView({
-                behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
-                  .matches
-                  ? "instant"
-                  : "smooth",
-              });
-          }}
-        />
-        <Rates materials={catalog.materials} />
-        <Quote
-          catalog={catalog}
-          materialId={chosenMaterial}
-          plantId={chosenPlant}
-          onMaterial={setMaterialId}
-          onPlant={setPlantId}
-          onIssued={setIssued}
-        />
-        <Track focus={issued} />
-        <Contact profile={catalog.profile} />
-      </main>
-      <footer className="foot">
-        <div className="wrap">
-          <div>
-            <strong>
-              YFC <span>TRANSPORT</span>
-            </strong>
-            <p>{catalog.profile.contactTagline}</p>
-          </div>
-          <p>{catalog.profile.footerLine}</p>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-function Hero({ catalog }: { catalog: Catalog }) {
-  const { profile, materials } = catalog;
-  return (
-    <section className="hero" id="top">
-      <img
-        className="cover"
-        src="/media/hero.jpg"
-        alt="Tipper on the haul road at a stone crusher plant at sunrise"
-      />
-      <div className="shade" />
-      <div className="wrap">
-        <div className="hero-copy">
-          <p className="kicker">{profile.heroKicker}</p>
-          <h1>
-            {profile.heroTitle}
-            <br />
-            {profile.heroTitleRest}
-          </h1>
-          <p className="lead">{profile.heroSubtitle}</p>
-          <p className="line">{profile.heroLine}</p>
-          <div className="actions">
-            <a className="btn" href="#order">
-              Get Best Quote
-            </a>
-            <a className="btn ghost" href="#track">
-              Track Order
-            </a>
-            <Link className="btn ghost" to="/signup">
-              Sign up
-            </Link>
-          </div>
-        </div>
-        <div className="rate-card">
-          <header>
-            <h2>Live Market Rates</h2>
-            <span className="live">
-              <i />
-              LIVE
-            </span>
-          </header>
-          <p>Ex-plant desk card, per ton</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Material</th>
-                <th className="num">Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {materials.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td className="num">{inr(item.rate)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+  if (!catalog) {
+    return (
+      <div className="yfc-public">
+        <PublicHeader phone={phone} email={email} />
+        <main className="pub-wrap pub-loading-box">
+          <p className="pub-muted">Loading YFC live rates and plant directory…</p>
+        </main>
       </div>
-    </section>
-  );
-}
-
-function Stats({ stats }: { stats: Stat[] }) {
-  return (
-    <section className="stats" aria-label="Company record">
-      <dl className="wrap">
-        {stats.map((item) => (
-          <div key={item.id}>
-            <dt>{item.label}</dt>
-            <dd>{item.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  );
-}
-
-function About({ profile }: { profile: Profile }) {
-  return (
-    <section className="block" id="about">
-      <div className="wrap split">
-        <div className="prose">
-          <p className="kicker">{profile.aboutKicker}</p>
-          <h2>{profile.aboutTitle}</h2>
-          <p>{profile.aboutParagraph1}</p>
-          <p>{profile.aboutParagraph2}</p>
-          <p>{profile.aboutParagraph3}</p>
-        </div>
-        <figure>
-          <img src={profile.aboutImage} alt="" />
-          <figcaption>
-            <span>{profile.aboutCaption}</span>
-            <span>{profile.aboutCaptionAside}</span>
-          </figcaption>
-        </figure>
-      </div>
-    </section>
-  );
-}
-
-function Materials({
-  materials,
-  onPick,
-}: {
-  materials: Material[];
-  onPick: (id: string) => void;
-}) {
-  return (
-    <section className="band block" id="materials">
-      <div className="wrap">
-        <div className="section-head">
-          <div>
-            <p className="kicker">MATERIALS</p>
-            <h2>Grades on the yard card.</h2>
-          </div>
-          <p>
-            Tap a grade to load it into the quote. Rates are the published
-            ex-plant card.
-          </p>
-        </div>
-        <ul className="grades">
-          {materials.map((item) => (
-            <li key={item.id}>
-              <button type="button" onClick={() => onPick(item.id)}>
-                <img src={item.image} alt="" />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>{item.useText}</small>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-function Plants({
-  plants,
-  onPick,
-}: {
-  plants: Plant[];
-  onPick: (id: string) => void;
-}) {
-  return (
-    <section className="block" id="plants">
-      <div className="wrap">
-        <p className="kicker">OUR PLANTS</p>
-        <h2>Loading points on the published card.</h2>
-        <ul className="yards">
-          {plants.map((plant) => (
-            <li key={plant.id}>
-              <button type="button" onClick={() => onPick(plant.id)}>
-                <img src={plant.image} alt="" />
-                <span>
-                  <strong>{plant.name}</strong>
-                  <small className="place">{plant.place}</small>
-                  <small>{plant.note}</small>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-function Rates({ materials }: { materials: Material[] }) {
-  return (
-    <section className="band block" id="rates">
-      <div className="wrap">
-        <p className="kicker">LIVE RATES</p>
-        <h2>Today’s ex-plant card.</h2>
-        <p className="status" style={{ maxWidth: 520, marginTop: 12 }}>
-          These are the published desk rates. Freight is added on the quote, by
-          plant and drop.
-        </p>
-        <div className="card-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Material</th>
-                <th>Grade</th>
-                <th className="num">Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {materials.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>{item.grade}</td>
-                  <td className="num">{inr(item.rate)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Quote({
-  catalog,
-  materialId,
-  plantId,
-  onMaterial,
-  onPlant,
-  onIssued,
-}: {
-  catalog: Catalog;
-  materialId: string;
-  plantId: string;
-  onMaterial: (id: string) => void;
-  onPlant: (id: string) => void;
-  onIssued: (reference: string) => void;
-}) {
-  const [destinationId, setDestinationId] = useState(
-    catalog.destinations[0]?.id ?? "",
-  );
-  const [qty, setQty] = useState("20");
-  const [mediator, setMediator] = useState("");
-  const [error, setError] = useState("");
-  const [issued, setIssued] = useState<Ticket | null>(null);
-  const [busy, setBusy] = useState(false);
-  const material =
-    catalog.materials.find((item) => item.id === materialId) ??
-    catalog.materials[0];
-  const plant =
-    catalog.plants.find((item) => item.id === plantId) ?? catalog.plants[0];
-  const priced = catalog.destinations.filter((item) => {
-    const rate = catalog.freight.find(
-      (lane) => lane.plantId === plant?.id && lane.destinationId === item.id,
-    )?.rate;
-    return rate != null && Number(rate) > 0;
-  });
-  const destination =
-    priced.find((item) => item.id === destinationId) ?? priced[0];
-  const preview = useMemo(() => {
-    const tonnes = Number(qty);
-    const freight =
-      catalog.freight.find(
-        (lane) =>
-          lane.plantId === plant?.id && lane.destinationId === destination?.id,
-      )?.rate ?? null;
-    const published =
-      freight != null && Number(freight) > 0 ? Number(freight) : null;
-    const landed =
-      material && published != null ? Number(material.rate) + published : null;
-    return {
-      tonnes: Number.isFinite(tonnes) ? tonnes : 0,
-      freight: published,
-      landed,
-      total: landed != null && Number.isFinite(tonnes) ? landed * tonnes : null,
-    };
-  }, [catalog.freight, destination?.id, material, plant?.id, qty]);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const tonnes = Number(qty);
-    if (!material || !plant || !destination || preview.freight == null) {
-      setError("Choose a plant and drop that already have a freight rate.");
-      return;
-    }
-    if (!Number.isFinite(tonnes) || tonnes < 1 || tonnes > 500) {
-      setError("Quantity must be between 1 and 500 ton.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const ticket = await post<Ticket>("/api/v1/site/quotes", {
-        materialId: material.id,
-        plantId: plant.id,
-        destinationId: destination.id,
-        quantity: tonnes,
-        mediator: mediator.trim(),
-      });
-      setIssued(ticket);
-      onIssued(ticket.reference);
-    } catch (caught) {
-      setError(message(caught));
-    } finally {
-      setBusy(false);
-    }
+    );
   }
 
+  const { profile, stats, materials, plants, destinations, freight } = catalog;
+  const trustedList = (profile.trustedClients || "L&T, Bestech, DLF, Ahluwalia, Emaar")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   return (
-    <section className="block" id="order">
-      <div className="wrap quote-grid">
-        <div>
-          <p className="kicker">QUICK ORDER</p>
-          <h2>Get Best Quote</h2>
-          <p className="status" style={{ marginTop: 12, maxWidth: 460 }}>
-            Material, tonnes, plant, and drop. The ticket shows ex-plant rate
-            plus the freight published for that lane. Operations sees the order
-            on the public desk.
-          </p>
-          <form className="form-grid" onSubmit={submit}>
-            <label className="field">
-              Material
+    <div className="yfc-public" id="top">
+      <PublicHeader phone={phone} email={email} />
+
+      {/* ==================== BAND 1: SPACIOUS 2-COLUMN HERO ==================== */}
+      <section className="pub-hero">
+        <div className="pub-wrap">
+          <div className="pub-hero-grid">
+            <div className="pub-hero-copy">
+              <span className="pub-pill-badge">
+                <span className="pub-pulse" /> {profile.heroKicker} · Owned Fleet &amp; Crusher Supply
+              </span>
+              <h1>
+                {profile.heroTitle}
+                <br />
+                <span>{profile.heroTitleRest}</span>
+              </h1>
+              <p className="pub-hero-sub">{profile.heroSubtitle}</p>
+              <p className="pub-hero-desc">
+                From logistics to delivery — we ensure quality, timely, and safe delivery of
+                building materials across India with our own tipper fleet and verified crusher yards.
+              </p>
+              <div className="pub-hero-actions">
+                <a className="pub-btn lg" href="#estimator">
+                  Estimate &amp; Enquire <ArrowRight size={16} />
+                </a>
+                <a className="pub-btn ghost lg" href="#track">
+                  <MapPin size={16} /> Track Your Order
+                </a>
+                <Link className="pub-link-cta" to="/signin">
+                  Customer Login →
+                </Link>
+              </div>
+            </div>
+
+            <div className="pub-hero-visual">
+              <figure className="pub-truck-frame">
+                <img
+                  src="/media/truck.jpg"
+                  alt="YFC Transport owned TATA Signa tipper fleet"
+                  fetchPriority="high"
+                  decoding="async"
+                />
+                <figcaption>
+                  <strong>YFC Owned Fleet</strong>
+                  <span>TATA Signa · Computerised Weighbridge</span>
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+
+          {/* 4-COLUMN HORIZONTAL STATS ROW BELOW HERO */}
+          <div className="pub-hero-stats" aria-label="Company track record">
+            {stats.slice(0, 4).map((s) => {
+              const Icon = statIconFor(s.label);
+              return (
+                <div className="pub-stat-chip" key={s.id}>
+                  <Icon size={20} />
+                  <div>
+                    <strong>{s.value}</strong>
+                    <span>{s.label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== BAND 2: PRICE ESTIMATOR & LIVE MARKET RATES ==================== */}
+      <section className="pub-band pub-band-white" id="estimator">
+        <div className="pub-wrap">
+          <div className="pub-band-head">
+            <div>
+              <p className="pub-kicker">LIVE DESK PRICING &amp; FREIGHT CALCULATOR</p>
+              <h2>Instant Landed Price Estimate</h2>
+              <p className="pub-lead">
+                Select your aggregate grade, tonnage, loading plant, and delivery corridor for an
+                immediate indicative landed price before speaking with dispatch.
+              </p>
+            </div>
+            <span className="pub-live-pill">
+              <i /> LIVE RATES UPDATED BY DESK
+            </span>
+          </div>
+
+          <form className="pub-estimator-bar" onSubmit={handleCalculate}>
+            <label className="pub-est-field">
+              <span>
+                <Package size={13} /> Select Material
+              </span>
               <select
-                value={material?.id ?? ""}
-                onChange={(event) => onMaterial(event.target.value)}
+                value={selectedMaterial?.id ?? ""}
+                onChange={(e) => {
+                  setMaterialId(e.target.value);
+                  setShowEstimate(true);
+                }}
               >
-                {catalog.materials.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
+                {materials.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({inr(m.rate)}/t)
                   </option>
                 ))}
               </select>
             </label>
-            <label className="field">
-              Quantity (Ton)
+
+            <label className="pub-est-field">
+              <span>
+                <Truck size={13} /> Quantity (Ton)
+              </span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -615,393 +567,926 @@ function Quote({
                 step="0.001"
                 required
                 value={qty}
-                onChange={(event) => setQty(event.target.value)}
+                onChange={(e) => {
+                  setQty(e.target.value);
+                  setShowEstimate(true);
+                }}
               />
             </label>
-            <label className="field span-2">
-              From Plant / Crusher
+
+            <label className="pub-est-field">
+              <span>
+                <Building2 size={13} /> From (Plant Location)
+              </span>
               <select
-                value={plant?.id ?? ""}
-                onChange={(event) => onPlant(event.target.value)}
+                value={selectedPlant?.id ?? ""}
+                onChange={(e) => {
+                  setPlantId(e.target.value);
+                  setShowEstimate(true);
+                }}
               >
-                {catalog.plants.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
+                {plants.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="field span-2">
-              Delivery Location
+
+            <label className="pub-est-field">
+              <span>
+                <MapPin size={13} /> To (Delivery Location)
+              </span>
               <select
-                value={destination?.id ?? ""}
-                onChange={(event) => setDestinationId(event.target.value)}
+                value={selectedDestination?.id ?? ""}
+                onChange={(e) => {
+                  setDestinationId(e.target.value);
+                  setShowEstimate(true);
+                }}
               >
-                {priced.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
+                {pricedDestinations.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="field span-2">
-              Mediator / Reference
-              <input
-                value={mediator}
-                placeholder="Rajpal"
-                maxLength={160}
-                onChange={(event) => setMediator(event.target.value)}
-              />
-            </label>
-            {error ? (
-              <p className="alert span-2" role="alert">
-                {error}
-              </p>
-            ) : null}
-            <button className="btn wide span-2" type="submit" disabled={busy}>
-              {busy ? "Sending…" : "Get Best Quote"}
+
+            <button className="pub-btn pub-est-submit" type="submit">
+              Get Best Estimate <ArrowRight size={15} />
             </button>
           </form>
-        </div>
-        <div style={{ display: "grid", gap: 16 }}>
-          <div className="lane">
-            <header>
-              <span>LANE</span>
-              <span>{material?.name}</span>
-            </header>
-            <svg className="route" viewBox="0 0 360 92" aria-hidden="true">
-              <path
-                d="M28 64 C 90 64, 110 24, 180 24 S 270 64, 332 28"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="route-dash"
-              />
-              <circle cx="28" cy="64" r="6" fill="currentColor" />
-              <circle cx="332" cy="28" r="6" fill="currentColor" />
-            </svg>
-            <div className="lane-ends">
-              <p>{plant?.name}</p>
-              <p>{destination?.name}</p>
-            </div>
-          </div>
-          <div className="ticket" style={{ marginTop: 0 }}>
-            <div>
-              <p className="kicker">INDICATIVE TICKET</p>
-              <dl className="rows">
+
+          {estimateError && (
+            <p className="pub-alert" role="alert" style={{ marginTop: 12 }}>
+              {estimateError}
+            </p>
+          )}
+
+          {showEstimate && selectedMaterial && selectedPlant && selectedDestination && (
+            <div className="pub-estimate-result">
+              <div className="pub-est-metrics">
                 <div>
-                  <dt>Ex-plant</dt>
-                  <dd>{material ? `${inr(material.rate)} / ton` : "—"}</dd>
+                  <small>Ex-Plant Rate</small>
+                  <strong>{inr(selectedMaterial.rate)} / t</strong>
                 </div>
                 <div>
-                  <dt>Freight</dt>
-                  <dd>
-                    {preview.freight == null
-                      ? "—"
-                      : `${inr(preview.freight)} / ton`}
-                  </dd>
+                  <small>Published Freight</small>
+                  <strong>
+                    {estimate.freight != null ? `${inr(estimate.freight)} / t` : "—"}
+                  </strong>
                 </div>
                 <div>
-                  <dt>Landed</dt>
-                  <dd>
-                    {preview.landed == null
-                      ? "—"
-                      : `${inr(preview.landed)} / ton`}
-                  </dd>
+                  <small>Landed Rate</small>
+                  <strong>
+                    {estimate.landed != null ? `${inr(estimate.landed)} / t` : "—"}
+                  </strong>
                 </div>
-                <div>
-                  <dt>Quantity</dt>
-                  <dd>{preview.tonnes || 0} ton</dd>
+                <div className="pub-est-total">
+                  <small>Estimated Total ({estimate.tonnes} t · excl. GST)</small>
+                  <strong>{estimate.total != null ? inr(estimate.total) : "—"}</strong>
                 </div>
-              </dl>
-              <div className="total">
-                <dt>Ticket total</dt>
-                <dd>{preview.total == null ? "—" : inr(preview.total)}</dd>
               </div>
-              {issued ? (
-                <div className="issued">
-                  <p className="kicker">ORDER {issued.reference}</p>
-                  <p>
-                    {issued.materialName} · {issued.quantity} ton ·{" "}
-                    {issued.plantName} → {issued.destination}
-                  </p>
-                  <p className="status">
-                    Mediator / Reference: {issued.mediator || "—"}
-                  </p>
-                  <a href="#track">Track this order</a>
-                </div>
-              ) : (
-                <p className="status" style={{ marginTop: 16 }}>
-                  Issue a quote to put a trackable order number on the
-                  operations desk.
+              <div className="pub-est-cta">
+                <p>
+                  Indicative estimate only — does not place an order. Send an enquiry for
+                  a confirmed quotation or sign in as an approved buyer.
                 </p>
-              )}
+                <div className="pub-est-buttons">
+                  <button
+                    type="button"
+                    className="pub-btn sm"
+                    onClick={sendEstimateToEnquiry}
+                  >
+                    Send Enquiry with Estimate <ArrowRight size={14} />
+                  </button>
+                  <Link className="pub-btn ghost sm" to="/signin">
+                    Customer Login
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* LIVE MARKET RATES STRIP (SHIFTED DOWN BELOW ESTIMATOR FOR BREATHING ROOM) */}
+          <div className="pub-rates-strip" id="rates" aria-label="Live market rates">
+            <div className="pub-rates-strip-head">
+              <h3>Today&apos;s Ex-Plant Market Rates</h3>
+              <span>Per tonne · Excl. GST · Click any grade to load into estimator</span>
+            </div>
+            <div className="pub-rates-cards">
+              {materials.map((m) => (
+                <button
+                  type="button"
+                  key={m.id}
+                  className={`pub-rate-tile ${selectedMaterial?.id === m.id ? "active" : ""}`}
+                  onClick={() => {
+                    setMaterialId(m.id);
+                    setShowEstimate(true);
+                  }}
+                >
+                  <span className="pub-rate-grade">{m.grade}</span>
+                  <strong>{m.name}</strong>
+                  <span className="pub-rate-price">
+                    {inr(m.rate)} <small>/ t</small>
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      {/* ==================== BAND 3: OUR MATERIALS & 6 GUARANTEES ==================== */}
+      <section className="pub-band pub-band-slate" id="materials">
+        <div className="pub-wrap">
+          <div className="pub-section-head">
+            <div>
+              <p className="pub-kicker">OUR MATERIALS</p>
+              <h2>Graded Aggregates &amp; Construction Sand</h2>
+              <p className="pub-lead">
+                Washed, screened, and crusher-certified building materials ready for daily bulk
+                dispatch.
+              </p>
+            </div>
+            <div className="pub-head-controls">
+              {!showAllMaterials && (
+                <div className="pub-carousel-arrows">
+                  <button
+                    type="button"
+                    className="pub-icon-circle"
+                    aria-label="Scroll materials left"
+                    onClick={() =>
+                      carouselRef.current?.scrollBy({ left: -320, behavior: "smooth" })
+                    }
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="pub-icon-circle"
+                    aria-label="Scroll materials right"
+                    onClick={() =>
+                      carouselRef.current?.scrollBy({ left: 320, behavior: "smooth" })
+                    }
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                className="pub-text-link"
+                onClick={() => setShowAllMaterials((v) => !v)}
+              >
+                {showAllMaterials ? "Show carousel" : "View All Materials"}{" "}
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={carouselRef}
+            className={showAllMaterials ? "pub-materials-grid" : "pub-materials-carousel"}
+          >
+            {materials.map((m) => (
+              <button
+                type="button"
+                key={m.id}
+                className={`pub-mat-card ${selectedMaterial?.id === m.id ? "selected" : ""}`}
+                onClick={() => {
+                  setMaterialId(m.id);
+                  setShowEstimate(true);
+                  smoothScroll("estimator");
+                }}
+              >
+                <div className="pub-mat-img">
+                  <img
+                    src={m.image}
+                    alt={`${m.name} crushed building material`}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <span className="pub-mat-price">{inr(m.rate)}/t</span>
+                </div>
+                <div className="pub-mat-body">
+                  <strong>{m.name}</strong>
+                  <span className="pub-mat-grade">{m.grade}</span>
+                  <p>{m.useText}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* 6-PILL TRUST STRIP */}
+          <div className="pub-trust-pills" aria-label="Key guarantees">
+            <span>
+              <ShieldCheck size={16} /> Quality Assured
+            </span>
+            <span>
+              <Clock size={16} /> Timely Delivery
+            </span>
+            <span>
+              <MapPin size={16} /> Stage Tracking
+            </span>
+            <span>
+              <TrendingUp size={16} /> Best Market Price
+            </span>
+            <span>
+              <Receipt size={16} /> GST Invoice
+            </span>
+            <span>
+              <Globe size={16} /> Pan India
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== BAND 4: OUR SERVICES & WHY CHOOSE YFC ==================== */}
+      <section className="pub-band pub-band-white" id="services">
+        <div className="pub-wrap">
+          <div className="pub-band-head">
+            <div>
+              <p className="pub-kicker">CAPABILITIES &amp; PROMISE</p>
+              <h2>Built for High-Volume Project Sites</h2>
+              <p className="pub-lead">
+                From crusher procurement to last-mile unloading, every trip is owned, weighed, and
+                billed transparently.
+              </p>
+            </div>
+          </div>
+
+          <div className="pub-two-col pub-spacious-grid">
+            <article className="pub-card pub-feature-card">
+              <p className="pub-kicker">OUR SERVICES</p>
+              <h3>End-to-End Material &amp; Fleet</h3>
+              <img
+                className="pub-service-img"
+                src="/media/plant.jpg"
+                alt="YFC stone crusher loading plant"
+                loading="lazy"
+                decoding="async"
+              />
+              <ul className="pub-check-list">
+                {SERVICES.map((s) => (
+                  <li key={s}>
+                    <CheckCircle2 size={16} /> <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+
+            <article className="pub-card pub-feature-card pub-why-card">
+              <div className="pub-why-header">
+                <div>
+                  <p className="pub-kicker">WHY CHOOSE YFC?</p>
+                  <h3>Direct Fleet. Verified Weights.</h3>
+                  <p className="pub-muted" style={{ marginTop: 6 }}>
+                    Consistent grading and predictable arrival windows for contractors, RMC plants,
+                    and infrastructure developers.
+                  </p>
+                </div>
+                <div className="pub-shield-wrap" aria-hidden="true">
+                  <svg viewBox="0 0 88 98" className="pub-shield-svg">
+                    <path
+                      d="M44 4 L80 18 V47 C80 71 64 86 44 94 C24 86 8 71 8 47 V18 Z"
+                      fill="#eff6ff"
+                      stroke="#1d4ed8"
+                      strokeWidth="3"
+                    />
+                    <path
+                      d="M44 12 L72 23 V47 C72 66 59 79 44 86 C29 79 16 66 16 47 V23 Z"
+                      fill="#ffffff"
+                      stroke="#dbeafe"
+                      strokeWidth="1.5"
+                    />
+                    <text
+                      x="44"
+                      y="55"
+                      textAnchor="middle"
+                      fontFamily="Inter, sans-serif"
+                      fontWeight="800"
+                      fontSize="20"
+                    >
+                      <tspan fill="#1d4ed8">Y</tspan>
+                      <tspan fill="#dc2626">F</tspan>
+                      <tspan fill="#16a34a">C</tspan>
+                    </text>
+                  </svg>
+                </div>
+              </div>
+              <ul className="pub-check-list">
+                {WHY_POINTS.map((point) => (
+                  <li key={point}>
+                    <CheckCircle2 size={16} /> <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== BAND 5: TRACK YOUR ORDER & DISPATCH DESK ==================== */}
+      <section className="pub-band pub-band-slate" id="track">
+        <div className="pub-wrap">
+          <div className="pub-track-desk-grid">
+            <TrackOrderCard />
+            <QuickActionsCard
+              phone={phone}
+              whatsapp={whatsapp}
+              onDownloadBrochure={downloadBrochure}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== BAND 6: TRUSTED CONSTRUCTION PARTNERS ==================== */}
+      {trustedList.length > 0 && (
+        <section className="pub-band pub-band-white pub-band-compact" aria-label="Trusted clients">
+          <div className="pub-wrap pub-clients-wrap">
+            <p className="pub-kicker">TRUSTED BY INDIA&apos;S TOP CONSTRUCTION COMPANIES</p>
+            <h2>Supplying Leading Infrastructure &amp; Real Estate Sites</h2>
+            <div className="pub-client-logos">
+              {trustedList.map((name) => (
+                <span key={name} className="pub-client-badge">
+                  {name}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ==================== BAND 7: PLANT DIRECTORY & INDIA PRESENCE MAP ==================== */}
+      <section className="pub-band pub-band-slate" id="plants">
+        <div className="pub-wrap">
+          <div className="pub-band-head">
+            <div>
+              <p className="pub-kicker">LOADING NETWORK &amp; COVERAGE</p>
+              <h2>Plant Directory &amp; Regional Presence</h2>
+              <p className="pub-lead">
+                Find the nearest active crusher yard for your delivery location and compare
+                published freight per tonne.
+              </p>
+            </div>
+          </div>
+
+          <div className="pub-plants-map-grid">
+            <article className="pub-card pub-feature-card">
+              <div className="pub-plant-head">
+                <div>
+                  <p className="pub-kicker">PLANT DIRECTORY</p>
+                  <h3>Find Your Nearest Plant</h3>
+                </div>
+                <label className="pub-inline-filter">
+                  <span>Filter freight by destination</span>
+                  <select
+                    value={plantDropFilter}
+                    onChange={(e) => setPlantDropFilter(e.target.value)}
+                  >
+                    <option value="">All active plants</option>
+                    {destinations.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="pub-plant-list">
+                {plants.map((p) => {
+                  const laneRate = plantDropFilter
+                    ? freight.find(
+                        (f) => f.plantId === p.id && f.destinationId === plantDropFilter,
+                      )?.rate
+                    : null;
+                  return (
+                    <button
+                      type="button"
+                      key={p.id}
+                      className="pub-plant-item"
+                      onClick={() => {
+                        setPlantId(p.id);
+                        if (plantDropFilter) setDestinationId(plantDropFilter);
+                        setShowEstimate(true);
+                        smoothScroll("estimator");
+                      }}
+                    >
+                      <div>
+                        <strong>{p.name}</strong>
+                        <small>{p.place}</small>
+                        <p>{p.note}</p>
+                      </div>
+                      <span className="pub-plant-rate">
+                        {laneRate && Number(laneRate) > 0
+                          ? `${inr(Number(laneRate))}/t freight`
+                          : "Use in Estimator →"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </article>
+
+            <IndiaPresenceCard />
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== BAND 8: ABOUT YFC EDITORIAL SECTION ==================== */}
+      <section className="pub-band pub-band-white" id="about">
+        <div className="pub-wrap">
+          <div className="pub-about-grid">
+            <div className="pub-about-copy">
+              <p className="pub-kicker">{profile.aboutKicker}</p>
+              <h2>{profile.aboutTitle}</h2>
+              <div className="pub-prose">
+                <p>{profile.aboutParagraph1}</p>
+                <p>{profile.aboutParagraph2}</p>
+                <p>{profile.aboutParagraph3}</p>
+              </div>
+              <div className="pub-about-actions">
+                <a className="pub-btn sm" href="#estimator">
+                  Calculate Freight Estimate <ArrowRight size={14} />
+                </a>
+                <Link className="pub-btn ghost sm" to="/signup?role=SUPPLIER">
+                  Partner as Supplier / Driver
+                </Link>
+              </div>
+            </div>
+
+            <figure className="pub-about-photo">
+              <img
+                src={profile.aboutImage || "/media/plant.jpg"}
+                alt={profile.aboutCaption || "YFC crusher and transport operations"}
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>
+                <strong>{profile.aboutCaption}</strong>
+                <span>{profile.aboutCaptionAside}</span>
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== BAND 9: REQUEST FOR QUOTATION ==================== */}
+      <section className="pub-band pub-band-slate" id="contact">
+        <div className="pub-wrap">
+          <EnquirySection
+            profile={profile}
+            phone={phone}
+            email={email}
+            whatsapp={whatsapp}
+            prefillNote={prefillNote}
+          />
+        </div>
+      </section>
+
+      {/* ==================== BAND 10: BOTTOM FOOTER TRUST STRIP ==================== */}
+      <footer className="pub-footer">
+        <div className="pub-footer-trust">
+          <div className="pub-wrap pub-footer-trust-row">
+            <span>
+              <ShieldCheck size={16} /> Verified Bank Payments
+            </span>
+            <span>
+              <FileText size={16} /> Digital GST Invoicing
+            </span>
+            <span>
+              <Truck size={16} /> E-Way Bill Ready
+            </span>
+            <span>
+              <Headphones size={16} /> 24/7 Dispatch Support
+            </span>
+            <a href={`tel:${phone.replace(/[^+0-9]/g, "")}`} className="pub-footer-call">
+              <Phone size={16} /> Need Help? Call {phone}
+            </a>
+          </div>
+        </div>
+        <div className="pub-wrap pub-footer-bottom">
+          <div className="pub-footer-brand">
+            <YfcTriLogo to="/" />
+            <p>{profile.contactTagline}</p>
+          </div>
+          <div className="pub-footer-right">
+            <p className="pub-footer-copy">{profile.footerLine}</p>
+            <Link className="pub-footer-staff-link" to="/staff">
+              Staff ERP Login →
+            </Link>
+          </div>
+        </div>
+      </footer>
+
+      {/* FLOATING WHATSAPP PILL FOR EASY REACH ANYWHERE ON PAGE */}
+      <a
+        className="pub-floating-wa"
+        href={`https://wa.me/${whatsapp}?text=${encodeURIComponent("Hello YFC Transport, I need a material supply & freight quotation.")}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Chat on WhatsApp ${phone}`}
+      >
+        <MessageCircle size={18} />
+        <span>WhatsApp Dispatch</span>
+      </a>
+    </div>
   );
 }
 
-function Track({ focus }: { focus: string }) {
+function TrackOrderCard() {
   const [query, setQuery] = useState("");
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [miss, setMiss] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const lookupId = useRef(0);
-  useEffect(
-    () => () => {
-      lookupId.current++;
-    },
-    [],
-  );
-  const [recent, setRecent] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!focus) return;
-    setQuery(focus);
-    setRecent((items) =>
-      [focus, ...items.filter((item) => item !== focus)].slice(0, 8),
-    );
-    void lookup(focus);
-  }, [focus]);
-
-  async function lookup(reference: string) {
-    const key = reference.trim();
+  async function lookup(event: FormEvent) {
+    event.preventDefault();
+    const key = query.trim().toUpperCase();
     if (!key) return;
-    const attempt = ++lookupId.current;
+    setBusy(true);
     setMiss(false);
     setError("");
-    setTicket(null);
-    setBusy(true);
     try {
-      const result = await request<Ticket>(
+      const found = await request<Ticket>(
         `/api/v1/site/quotes/${encodeURIComponent(key)}`,
       );
-      if (attempt !== lookupId.current) return;
-      setTicket(result);
-      setRecent((items) =>
-        [key, ...items.filter((item) => item !== key)].slice(0, 8),
-      );
+      setTicket(found);
     } catch (caught) {
-      if (attempt !== lookupId.current) return;
-      if (caught instanceof ApiError && caught.status === 404) setMiss(true);
-      else setError("Tracking is temporarily unavailable. Please try again.");
+      setTicket(null);
+      const status =
+        typeof caught === "object" && caught && "status" in caught
+          ? Number((caught as { status: number }).status)
+          : 0;
+      if (status === 404) setMiss(true);
+      else setError(errMsg(caught));
     } finally {
-      if (attempt === lookupId.current) setBusy(false);
+      setBusy(false);
     }
   }
 
+  const stageIndex = ticket ? Math.max(0, STAGE_KEYS.indexOf(ticket.stage)) : -1;
+
   return (
-    <section className="band block" id="track">
-      <div className="wrap">
-        <p className="kicker">TRACK ORDER</p>
-        <h2>Follow the ticket.</h2>
-        <p className="status" style={{ marginTop: 12 }}>
-          Operations moves the stage. This page only follows it.
+    <article className="pub-card pub-feature-card pub-track-card">
+      <div className="pub-track-head">
+        <div>
+          <p className="pub-kicker">TRACK YOUR ORDER</p>
+          <h3>Live Dispatch Stage Lookup</h3>
+        </div>
+        <span className="pub-live-pill">
+          <i /> Live Tracking
+        </span>
+      </div>
+      <p className="pub-muted" style={{ marginTop: 4 }}>
+        Enter your YFC dispatch ticket reference (for example <code>YFC-10001-XXXX</code>) to
+        check loading, transit, and delivery progress in real time.
+      </p>
+      <form className="pub-track-form" onSubmit={lookup}>
+        <label className="pub-sr-only" htmlFor="track-order-input">
+          Order ID
+        </label>
+        <input
+          id="track-order-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="YFC-10001-XXXX"
+          autoCapitalize="characters"
+          maxLength={40}
+        />
+        <button className="pub-btn" type="submit" disabled={busy}>
+          <Search size={15} /> {busy ? "Searching…" : "Track Order"}
+        </button>
+      </form>
+      {miss && (
+        <p className="pub-alert" role="status">
+          No ticket found for <strong>{query.trim().toUpperCase()}</strong>. Check the code on
+          your dispatch slip or call our desk.
         </p>
-        <form
-          className="track-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void lookup(query);
-          }}
-        >
-          <label
-            className="sr-only"
-            htmlFor="order-id"
-            style={{ position: "absolute", left: -9999 }}
-          >
-            Order number
-          </label>
-          <input
-            id="order-id"
-            required
-            maxLength={100}
-            autoComplete="off"
-            placeholder="YFC-10001-A1B2C3D4"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setMiss(false);
-              setError("");
-              setTicket(null);
-              lookupId.current++;
-              setBusy(false);
-            }}
-          />
-          <button className="btn" type="submit" disabled={busy}>
-            {busy ? "Looking up…" : "Track Order"}
-          </button>
-        </form>
-        {error && (
-          <p className="alert" role="alert">
-            {error}
+      )}
+      {error && (
+        <p className="pub-alert" role="alert">
+          {error}
+        </p>
+      )}
+      {ticket && (
+        <div className="pub-ticket-box">
+          <div className="pub-ticket-top">
+            <strong>{ticket.reference}</strong>
+            <span className="pub-stage-badge">{ticket.stageLabel}</span>
+          </div>
+          <p>
+            {ticket.materialName} · {ticket.quantity} ton · {ticket.plantName} →{" "}
+            {ticket.destination}
           </p>
-        )}
-        {busy && (
-          <p className="status" role="status">
-            Checking your order…
-          </p>
-        )}
-        {miss ? (
-          <p className="alert" role="status">
-            No order with that number.
-          </p>
-        ) : null}
-        {ticket ? <TicketView ticket={ticket} /> : null}
-        {recent.length > 0 ? (
-          <ul className="chips">
-            {recent.map((reference) => (
-              <li key={reference}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery(reference);
-                    void lookup(reference);
-                  }}
-                >
-                  {reference}
-                </button>
+          <ol className="pub-stage-steps">
+            {STAGES.map((label, i) => (
+              <li key={label} className={i <= stageIndex ? "done" : ""}>
+                {label}
               </li>
             ))}
-          </ul>
-        ) : (
-          <p className="status" style={{ marginTop: 24 }}>
-            Quotes you issue in this visit show up here.
-          </p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function TicketView({ ticket }: { ticket: Ticket }) {
-  const index = stages.indexOf(ticket.stageLabel);
-  return (
-    <article className="ticket">
-      <img src={ticket.materialImage} alt="" />
-      <div>
-        <p className="kicker">{ticket.reference}</p>
-        <h3 style={{ fontSize: 28, marginTop: 8 }}>
-          {ticket.materialName} · {ticket.quantity} ton
-        </h3>
-        <p className="status">
-          {ticket.plantName} → {ticket.destination}
+          </ol>
+        </div>
+      )}
+      <div className="pub-track-footer">
+        <p className="pub-track-portal-note">
+          Already an approved customer?{" "}
+          <Link to="/signin">Sign in to view all orders, trips &amp; GST invoices →</Link>
         </p>
-        <p className="status">
-          Mediator / Reference: {ticket.mediator || "—"} · Landed{" "}
-          {inr(Number(ticket.materialRate) + Number(ticket.freightRate))} / ton
-        </p>
-        <ol className="stages">
-          {stages.map((label, step) => (
-            <li key={label} className={step <= index ? "on" : ""}>
-              {label}
-            </li>
-          ))}
-        </ol>
       </div>
     </article>
   );
 }
 
-function Contact({ profile }: { profile: Profile }) {
+function QuickActionsCard({
+  phone,
+  whatsapp,
+  onDownloadBrochure,
+}: {
+  phone: string;
+  whatsapp: string;
+  onDownloadBrochure: () => void;
+}) {
+  const [callOpen, setCallOpen] = useState(false);
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function requestCall(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const name = String(form.get("name") ?? "").trim();
-    const phone = String(form.get("phone") ?? "").trim();
-    const note = String(form.get("note") ?? "").trim();
-    if (name.length < 2 || phone.length < 7) {
-      setError("Leave a name and a phone number the yard can use.");
-      setSaved("");
+    const formEl = event.currentTarget;
+    const data = new FormData(formEl);
+    const name = String(data.get("name") ?? "").trim();
+    const mobile = String(data.get("phone") ?? "").trim();
+    if (name.length < 2 || mobile.length < 7) {
+      setError("Enter your name and phone number.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const receipt = await post<{ reference: string }>(
-        "/api/v1/site/enquiries",
-        {
-          name,
-          phone,
-          note,
-        },
-      );
-      setSaved(receipt.reference);
-      formElement.reset();
+      const res = await post<{ reference: string }>("/api/v1/site/enquiries", {
+        name,
+        phone: mobile,
+        note: "Callback requested from public website.",
+      });
+      setSaved(res.reference);
+      formEl.reset();
     } catch (caught) {
-      setError(message(caught));
+      setError(errMsg(caught));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="block" id="contact">
-      <div className="wrap contact-grid">
-        <div>
-          <p className="kicker">{profile.contactKicker}</p>
+    <div className="pub-card pub-feature-card pub-rail-card">
+      <p className="pub-kicker">INSTANT DESK</p>
+      <h3>Talk to Dispatch</h3>
+      <p className="pub-muted" style={{ marginBottom: 16 }}>
+        Need immediate truck availability or bulk project rates? Reach our operations desk directly.
+      </p>
+      <div className="pub-rail-actions">
+        <a
+          className="pub-rail-btn whatsapp"
+          href={`https://wa.me/${whatsapp}?text=${encodeURIComponent("Hello YFC Transport, I need a material supply & freight quotation.")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <MessageCircle size={17} /> Chat on WhatsApp
+        </a>
+        <button
+          type="button"
+          className="pub-rail-btn"
+          onClick={() => {
+            setCallOpen((v) => !v);
+            setSaved("");
+            setError("");
+          }}
+        >
+          <PhoneCall size={17} /> Request a Call
+        </button>
+        <button
+          type="button"
+          className="pub-rail-btn"
+          onClick={onDownloadBrochure}
+        >
+          <Download size={17} /> Download Brochure
+        </button>
+      </div>
+      {callOpen && (
+        <form className="pub-callback-form" onSubmit={requestCall}>
+          <input name="name" placeholder="Your name" required minLength={2} maxLength={120} />
+          <input
+            name="phone"
+            type="tel"
+            placeholder="Mobile number"
+            required
+            pattern="[+0-9 ()\-]{7,20}"
+            maxLength={20}
+          />
+          {error && <p className="pub-alert">{error}</p>}
+          {saved && (
+            <p className="pub-success">
+              Logged as <strong>{saved}</strong> — our desk will call you shortly.
+            </p>
+          )}
+          <button className="pub-btn sm" type="submit" disabled={busy}>
+            {busy ? "Sending…" : "Call me back"}
+          </button>
+        </form>
+      )}
+      <p className="pub-rail-phone">
+        Direct line: <a href={`tel:${phone.replace(/[^+0-9]/g, "")}`}>{phone}</a>
+      </p>
+    </div>
+  );
+}
+
+function IndiaPresenceCard() {
+  return (
+    <div className="pub-card pub-feature-card pub-presence-card">
+      <p className="pub-kicker">OUR PRESENCE IN INDIA</p>
+      <h3>Haryana, Rajasthan &amp; NCR</h3>
+      <p className="pub-muted">
+        Daily tipper dispatches from Kotputli, Behror, and Bhiwadi hubs across NCR and Pan-India
+        project corridors.
+      </p>
+      <div className="pub-india-map" aria-label="Map highlighting Haryana and NCR operations in India">
+        <svg viewBox="0 0 280 250" role="img" aria-label="India supply network map">
+          {/* Stylized clean outline of India shifted left to give callouts clean room */}
+          <path
+            d="M84 14 L106 10 L122 22 L134 36 L128 52 L144 64 L166 72 L188 68 L202 82 L192 98 L172 96 L160 112 L148 134 L132 162 L114 198 L100 232 L88 214 L76 184 L62 152 L44 128 L24 114 L20 96 L40 88 L46 68 L62 48 L72 28 Z"
+            fill="#f1f5f9"
+            stroke="#cbd5e1"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          {/* Northern corridor highlight (Haryana / NCR / Kotputli) */}
+          <path
+            d="M72 60 L102 58 L112 76 L94 94 L68 92 L58 76 Z"
+            fill="#dbeafe"
+            stroke="#2563eb"
+            strokeWidth="1.5"
+          />
+          {/* Supply routes radiating across India */}
+          <path
+            d="M86 76 Q116 98 148 118 M86 76 Q66 116 56 138 M86 76 Q98 140 100 186"
+            fill="none"
+            stroke="#3b82f6"
+            strokeWidth="1.5"
+            strokeDasharray="4 4"
+          />
+          {/* Hub dots */}
+          <circle cx="88" cy="72" r="5" fill="#1d4ed8" />
+          <circle cx="88" cy="72" r="10" fill="rgba(37, 99, 235, 0.2)" />
+          <circle cx="80" cy="84" r="3.5" fill="#15803d" />
+
+          {/* Clean leader lines + non-overlapping callout labels */}
+          <line x1="96" y1="68" x2="176" y2="44" stroke="#1d4ed8" strokeWidth="1" strokeDasharray="2 2" />
+          <rect x="176" y="30" width="96" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" />
+          <text x="224" y="47" textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#1e3a8a">
+            Haryana / NCR
+          </text>
+
+          <line x1="86" y1="86" x2="176" y2="112" stroke="#15803d" strokeWidth="1" strokeDasharray="2 2" />
+          <rect x="176" y="100" width="96" height="26" rx="6" fill="#ecfdf5" stroke="#bbf7d0" />
+          <text x="224" y="117" textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#14532d">
+            Kotputli Hub
+          </text>
+        </svg>
+      </div>
+      <div className="pub-region-chips">
+        <span>Haryana</span>
+        <span>Kotputli (RJ)</span>
+        <span>Delhi NCR</span>
+        <span>Pan India</span>
+      </div>
+    </div>
+  );
+}
+
+function EnquirySection({
+  profile,
+  phone,
+  email,
+  whatsapp,
+  prefillNote,
+}: {
+  profile: Profile;
+  phone: string;
+  email: string;
+  whatsapp: string;
+  prefillNote: string;
+}) {
+  const [note, setNote] = useState(prefillNote);
+  const [saved, setSaved] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (prefillNote) setNote(prefillNote);
+  }, [prefillNote]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
+    const name = String(form.get("name") ?? "").trim();
+    const mobile = String(form.get("phone") ?? "").trim();
+    if (name.length < 2 || mobile.length < 7) {
+      setError("Leave your name and phone number so the dispatch desk can call you.");
+      setSaved("");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const receipt = await post<{ reference: string }>("/api/v1/site/enquiries", {
+        name,
+        phone: mobile,
+        note: note.trim(),
+      });
+      setSaved(receipt.reference);
+      formEl.reset();
+      setNote("");
+    } catch (caught) {
+      setError(errMsg(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="pub-card pub-rfq-card">
+      <div className="pub-rfq-grid">
+        <div className="pub-rfq-info">
+          <p className="pub-kicker">REQUEST FOR QUOTATION</p>
           <h2>{profile.contactTitle}</h2>
-          <p className="status" style={{ marginTop: 16, maxWidth: 460 }}>
+          <p className="pub-muted" style={{ marginTop: 12 }}>
             {profile.contactBody}
           </p>
-          <p
-            style={{
-              marginTop: 24,
-              fontFamily: "Syne, sans-serif",
-              fontSize: 28,
-              fontWeight: 650,
-            }}
-          >
-            {profile.contactTagline}
-          </p>
+          <div className="pub-contact-meta">
+            <a href={`tel:${phone.replace(/[^+0-9]/g, "")}`}>
+              <Phone size={16} /> {phone}
+            </a>
+            <a href={`mailto:${email}`}>
+              <Mail size={16} /> {email}
+            </a>
+            <a
+              href={`https://wa.me/${whatsapp}?text=${encodeURIComponent("Hello YFC Transport, I would like to request a bulk quotation.")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="pub-wa-inline"
+            >
+              <MessageCircle size={16} /> WhatsApp {phone}
+            </a>
+          </div>
+          <p className="pub-rfq-tagline">{profile.contactTagline}</p>
         </div>
-        <form className="panel" onSubmit={submit}>
-          <label className="field">
-            Name
-            <input
-              name="name"
-              autoComplete="name"
-              required
-              minLength={2}
-              maxLength={160}
+        <form className="pub-rfq-form" onSubmit={submit}>
+          <div className="pub-form-row">
+            <label className="pub-field">
+              <span>Your Name / Company</span>
+              <input name="name" autoComplete="name" required minLength={2} maxLength={160} />
+            </label>
+            <label className="pub-field">
+              <span>Mobile Number</span>
+              <input
+                name="phone"
+                type="tel"
+                autoComplete="tel"
+                required
+                pattern="[+0-9 ()\-]{7,20}"
+                maxLength={20}
+              />
+            </label>
+          </div>
+          <label className="pub-field">
+            <span>Material, Tonnes &amp; Delivery Site Details</span>
+            <textarea
+              name="note"
+              maxLength={1000}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g., 50 ton 20 MM Aggregate to Gurugram, Sector 82"
             />
           </label>
-          <label className="field">
-            Phone
-            <input
-              name="phone"
-              type="tel"
-              autoComplete="tel"
-              required
-              pattern="[+0-9 ()\-]{7,20}"
-              maxLength={20}
-            />
-          </label>
-          <label className="field">
-            Note for the yard
-            <textarea name="note" maxLength={1000} />
-          </label>
-          {error ? (
-            <p className="alert" role="alert">
+          {error && (
+            <p className="pub-alert" role="alert">
               {error}
             </p>
-          ) : null}
-          {saved ? (
-            <p className="status" role="status">
-              The desk has this as {saved}. Operations can see it.
+          )}
+          {saved && (
+            <p className="pub-success" role="status">
+              Enquiry received — reference <strong>{saved}</strong>. Operations will reach out
+              shortly.
             </p>
-          ) : null}
-          <button className="btn" type="submit" disabled={busy}>
-            {busy ? "Sending…" : "Send to desk"}
+          )}
+          <button className="pub-btn lg" type="submit" disabled={busy}>
+            {busy ? "Sending…" : "Submit Enquiry to Desk"} <ArrowRight size={16} />
           </button>
         </form>
       </div>
@@ -1009,33 +1494,112 @@ function Contact({ profile }: { profile: Profile }) {
   );
 }
 
+type SignupRole = "CUSTOMER" | "SUPPLIER" | "DRIVER";
+
+const SIGNUP_ROLES: {
+  id: SignupRole;
+  label: string;
+  sub: string;
+  kicker: string;
+  heading: string;
+  desc: string;
+  cta: string;
+  icon: typeof Building2;
+}[] = [
+  {
+    id: "CUSTOMER",
+    label: "Customer",
+    sub: "Buy materials & track orders",
+    kicker: "CUSTOMER ACCOUNT",
+    heading: "Create Your Buyer Account",
+    desc: "Once approved by our office, sign in with your username to track orders, dispatches, weighbridge slips, and GST invoices.",
+    cta: "Request Customer Account",
+    icon: Building2,
+  },
+  {
+    id: "SUPPLIER",
+    label: "Supplier",
+    sub: "Crusher & material partner",
+    kicker: "SUPPLIER REGISTRATION",
+    heading: "Register as a Material Supplier",
+    desc: "Crusher plants and aggregate partners register here. After verification by operations, view purchase orders, receipts, and settlements.",
+    cta: "Request Supplier Account",
+    icon: Package,
+  },
+  {
+    id: "DRIVER",
+    label: "Driver",
+    sub: "Fleet & delivery driver",
+    kicker: "DRIVER REGISTRATION",
+    heading: "Register as a Fleet Driver",
+    desc: "Drivers register with licence and emergency details. Once approved by our office, sign in to view assigned trips and dispatches.",
+    cta: "Request Driver Account",
+    icon: Truck,
+  },
+];
+
+function parseSignupRole(raw: string | null): SignupRole {
+  const upper = (raw ?? "").toUpperCase();
+  if (upper === "SUPPLIER" || upper === "DRIVER" || upper === "CUSTOMER") {
+    return upper;
+  }
+  return "CUSTOMER";
+}
+
 export function CustomerSignup() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [role, setRole] = useState<SignupRole>(() => parseSignupRole(searchParams.get("role")));
+  const [shown, setShown] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const param = searchParams.get("role");
+    if (param) setRole(parseSignupRole(param));
+  }, [searchParams]);
+
+  const activeRole = SIGNUP_ROLES.find((r) => r.id === role) ?? SIGNUP_ROLES[0];
+
+  function selectRole(next: SignupRole) {
+    setRole(next);
+    setError("");
+    setDone(false);
+    setSearchParams(next === "CUSTOMER" ? {} : { role: next }, { replace: true });
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const body: Record<string, string> = {
       applicationId: uuid(),
-      role: "CUSTOMER",
+      role,
       username: String(form.get("username") ?? "").trim(),
       password: String(form.get("password") ?? ""),
       name: String(form.get("name") ?? "").trim(),
       mobile: String(form.get("mobile") ?? "").trim(),
     };
-    const gstin = String(form.get("gstin") ?? "").trim();
-    const address = String(form.get("address") ?? "").trim();
-    if (gstin) body.gstin = gstin.toUpperCase();
-    if (address) body.address = address;
+    for (const key of [
+      "gstin",
+      "address",
+      "email",
+      "licenseNumber",
+      "licenseExpiry",
+      "emergencyContact",
+      "emergencyMobile",
+    ]) {
+      const value = String(form.get(key) ?? "").trim();
+      if (value) body[key] = value;
+    }
+    if (body.gstin) body.gstin = body.gstin.toUpperCase();
+    if (body.licenseNumber) body.licenseNumber = body.licenseNumber.toUpperCase();
     setBusy(true);
     setError("");
     try {
       await post("/api/v1/account-applications", body);
       setDone(true);
     } catch (caught) {
-      setError(message(caught));
+      setError(errMsg(caught));
     } finally {
       setBusy(false);
     }
@@ -1043,88 +1607,368 @@ export function CustomerSignup() {
 
   return (
     <div className="yfc-public">
-      <PublicBar home={false} />
-      <main className="signup">
-        <div className="wrap signup-grid">
-          <div>
-            <p className="kicker">CUSTOMER</p>
-            <h1>Create your login.</h1>
-            <p className="status">
-              An administrator or operations user approves the login before it
-              can be used. After that, you see only your own orders, trips, and
-              bills.
-            </p>
-            <p className="status">
-              Suppliers and drivers use the <Link to="/join">request form</Link>
-              . After approval, everyone signs in with{" "}
-              <Link to="/staff">Login</Link>.
-            </p>
-            <p>
-              <Link className="text-link" to="/">
-                Back to the yard
-              </Link>
-            </p>
+      <PublicHeader phone="+91 96672 89071" email="sales@yfctransport.com" home={false} />
+      <main className="pub-wrap pub-signup-wrap">
+        <div className="pub-card pub-signup-card">
+          <div className="pub-role-tabs" role="tablist" aria-label="Account type">
+            {SIGNUP_ROLES.map((item) => {
+              const Icon = item.icon;
+              const selected = item.id === role;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={`pub-role-tab ${selected ? "active" : ""}`}
+                  onClick={() => selectRole(item.id)}
+                >
+                  <Icon size={17} />
+                  <div>
+                    <strong>{item.label}</strong>
+                    <span>{item.sub}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
+
+          <p className="pub-kicker" style={{ marginTop: 24 }}>
+            {activeRole.kicker}
+          </p>
+          <h1>{activeRole.heading}</h1>
+          <p className="pub-muted" style={{ marginTop: 8 }}>
+            {activeRole.desc}
+          </p>
+
           {done ? (
-            <div className="panel">
-              <p className="kicker">REQUEST RECEIVED</p>
-              <h2>Your login is waiting for approval.</h2>
-              <p className="status">
-                You can sign in after an administrator or operations user
-                approves this request.
-              </p>
-              <Link className="btn" to="/staff">
-                Login
-              </Link>
+            <div className="pub-success" style={{ marginTop: 22 }}>
+              <strong>{activeRole.label} application submitted!</strong> Your request is now in
+              our office review queue. Once approved by administration or operations, you can sign
+              in immediately.
+              <div style={{ marginTop: 14 }}>
+                <Link className="pub-btn sm" to="/signin">
+                  Go to Portal Login
+                </Link>
+              </div>
             </div>
           ) : (
-            <form className="panel" onSubmit={submit}>
-              <label className="field">
-                Name
-                <input name="name" required maxLength={120} />
-              </label>
-              <label className="field">
-                Mobile
-                <input name="mobile" inputMode="tel" required maxLength={20} />
-              </label>
-              <label className="field">
-                Username
-                <input
-                  name="username"
-                  autoComplete="username"
-                  required
-                  maxLength={80}
-                />
-              </label>
-              <label className="field">
-                Password
-                <input
-                  name="password"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={12}
-                  maxLength={72}
-                  required
-                />
-              </label>
-              <label className="field">
-                GSTIN, if you have one
-                <input name="gstin" maxLength={15} />
-              </label>
-              <label className="field">
-                Address, if you want it recorded
-                <textarea name="address" maxLength={500} />
-              </label>
-              {error ? (
-                <p className="alert" role="alert">
+            <form
+              key={role}
+              className="pub-rfq-form"
+              style={{ marginTop: 24 }}
+              onSubmit={submit}
+            >
+              <div className="pub-form-row">
+                <label className="pub-field">
+                  <span>
+                    {role === "CUSTOMER"
+                      ? "Your Name / Company"
+                      : role === "SUPPLIER"
+                        ? "Company / Crusher Plant Name"
+                        : "Driver Full Name"}
+                  </span>
+                  <input name="name" required maxLength={120} />
+                </label>
+                <label className="pub-field">
+                  <span>Mobile Number</span>
+                  <input
+                    name="mobile"
+                    type="tel"
+                    required
+                    pattern="[+0-9 ()\-]{7,20}"
+                    maxLength={20}
+                    placeholder="+91 98765 43210"
+                  />
+                </label>
+              </div>
+
+              {role === "CUSTOMER" && (
+                <>
+                  <label className="pub-field">
+                    <span>Delivery Address (optional)</span>
+                    <input
+                      name="address"
+                      maxLength={500}
+                      placeholder="Project site or billing address"
+                    />
+                  </label>
+                  <label className="pub-field">
+                    <span>GSTIN (optional)</span>
+                    <input
+                      name="gstin"
+                      maxLength={15}
+                      placeholder="06ABCDE1234F1Z5"
+                      style={{ textTransform: "uppercase" }}
+                    />
+                  </label>
+                </>
+              )}
+
+              {role === "SUPPLIER" && (
+                <>
+                  <div className="pub-form-row">
+                    <label className="pub-field">
+                      <span>GSTIN *</span>
+                      <input
+                        name="gstin"
+                        required
+                        maxLength={15}
+                        placeholder="08ABCDE1234F1Z5"
+                        style={{ textTransform: "uppercase" }}
+                      />
+                    </label>
+                    <label className="pub-field">
+                      <span>Business Email (optional)</span>
+                      <input
+                        name="email"
+                        type="email"
+                        maxLength={254}
+                        placeholder="billing@crusherplant.com"
+                      />
+                    </label>
+                  </div>
+                  <label className="pub-field">
+                    <span>Plant / Billing Address *</span>
+                    <textarea
+                      name="address"
+                      required
+                      maxLength={500}
+                      placeholder="Crusher location, village/industrial area, district & state"
+                    />
+                  </label>
+                </>
+              )}
+
+              {role === "DRIVER" && (
+                <>
+                  <div className="pub-form-row">
+                    <label className="pub-field">
+                      <span>Driving Licence Number *</span>
+                      <input
+                        name="licenseNumber"
+                        required
+                        minLength={5}
+                        maxLength={40}
+                        placeholder="RJ14-20210012345"
+                        style={{ textTransform: "uppercase" }}
+                      />
+                    </label>
+                    <label className="pub-field">
+                      <span>Licence Expiry Date *</span>
+                      <input name="licenseExpiry" type="date" required />
+                    </label>
+                  </div>
+                  <div className="pub-form-row">
+                    <label className="pub-field">
+                      <span>Emergency Contact Name *</span>
+                      <input name="emergencyContact" required maxLength={160} />
+                    </label>
+                    <label className="pub-field">
+                      <span>Emergency Mobile *</span>
+                      <input
+                        name="emergencyMobile"
+                        type="tel"
+                        required
+                        pattern="[+0-9 ()\-]{7,20}"
+                        maxLength={20}
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
+
+              <div className="pub-form-row">
+                <label className="pub-field">
+                  <span>Choose Username</span>
+                  <input
+                    name="username"
+                    required
+                    minLength={3}
+                    maxLength={80}
+                    autoComplete="username"
+                    placeholder="e.g. sharma_crusher"
+                  />
+                </label>
+                <label className="pub-field">
+                  <span>Password (min. 12 chars)</span>
+                  <div className="pub-password-wrap">
+                    <input
+                      name="password"
+                      type={shown ? "text" : "password"}
+                      required
+                      minLength={12}
+                      maxLength={72}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      className="pub-password-toggle"
+                      aria-label={shown ? "Hide password" : "Show password"}
+                      onClick={() => setShown((v) => !v)}
+                    >
+                      {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </label>
+              </div>
+
+              {error && (
+                <p className="pub-alert" role="alert">
                   {error}
                 </p>
-              ) : null}
-              <button className="btn wide" type="submit" disabled={busy}>
-                {busy ? "Sending…" : "Request account"}
+              )}
+              <button className="pub-btn lg" type="submit" disabled={busy}>
+                {busy ? "Submitting…" : activeRole.cta} <ArrowRight size={16} />
               </button>
+              <p className="pub-muted" style={{ marginTop: 8 }}>
+                Already approved? <Link to="/signin">Sign in to Portal</Link> · YFC staff?{" "}
+                <Link to="/staff">Staff ERP Login</Link>
+              </p>
             </form>
           )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export function CustomerLogin({
+  signedInStaff,
+  onSignedIn,
+  onSignOut,
+}: {
+  signedInStaff?: string | null;
+  onSignedIn: () => Promise<void>;
+  onSignOut: () => Promise<void>;
+}) {
+  const navigate = useNavigate();
+  const [shown, setShown] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const username = String(form.get("username") ?? "").trim();
+    const password = String(form.get("password") ?? "");
+    if (!username || !password) return;
+    setBusy(true);
+    setError("");
+    try {
+      await login(username, password, "CUSTOMER");
+      await onSignedIn();
+      navigate("/portal", { replace: true });
+    } catch (caught) {
+      setError(errMsg(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="yfc-public">
+      <PublicHeader phone="+91 96672 89071" email="sales@yfctransport.com" home={false} />
+      <main className="pub-wrap pub-signup-wrap">
+        <div className="pub-card pub-signup-card pub-signin-card">
+          <p className="pub-kicker">CUSTOMER &amp; PARTNER PORTAL</p>
+          <h1>Sign in to Your Account</h1>
+          <p className="pub-muted" style={{ marginTop: 8 }}>
+            Approved customers, suppliers, and drivers sign in here to track orders,
+            dispatches, weighbridge slips, and GST invoices.
+          </p>
+
+          {signedInStaff ? (
+            <div className="pub-switch-notice" style={{ marginTop: 22 }}>
+              <p>
+                You are currently signed in as office staff (<strong>{signedInStaff}</strong>).
+                Open your Staff ERP workspace or sign out to switch to a customer account.
+              </p>
+              <div className="pub-switch-actions">
+                <Link className="pub-btn sm" to="/dashboard">
+                  Open Staff ERP <ArrowRight size={14} />
+                </Link>
+                <button
+                  type="button"
+                  className="pub-btn ghost sm"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      await logout();
+                      await onSignOut();
+                    } catch (caught) {
+                      setError(errMsg(caught));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  {busy ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
+              {error && (
+                <p className="pub-alert" role="alert" style={{ marginTop: 12 }}>
+                  {error}
+                </p>
+              )}
+            </div>
+          ) : (
+            <form className="pub-rfq-form" style={{ marginTop: 24 }} onSubmit={submit}>
+              <label className="pub-field">
+                <span>Username</span>
+                <input
+                  name="username"
+                  required
+                  autoComplete="username"
+                  placeholder="Enter your portal username"
+                />
+              </label>
+              <label className="pub-field">
+                <span>Password</span>
+                <div className="pub-password-wrap">
+                  <input
+                    name="password"
+                    type={shown ? "text" : "password"}
+                    required
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                  />
+                  <button
+                    type="button"
+                    className="pub-password-toggle"
+                    aria-label={shown ? "Hide password" : "Show password"}
+                    onClick={() => setShown((v) => !v)}
+                  >
+                    {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </label>
+              {error && (
+                <p className="pub-alert" role="alert">
+                  {error}
+                </p>
+              )}
+              <button className="pub-btn lg" type="submit" disabled={busy}>
+                {busy ? "Signing in…" : "Sign in to Customer Portal"} <ArrowRight size={16} />
+              </button>
+              <div className="pub-signin-links">
+                <p className="pub-muted">
+                  New buyer? <Link to="/signup">Create a customer account</Link>
+                </p>
+                <p className="pub-muted">
+                  Supplier or driver? <Link to="/signup?role=SUPPLIER">Register here</Link> ·{" "}
+                  <Link to="/reset">Reset password</Link>
+                </p>
+              </div>
+            </form>
+          )}
+
+          <div className="pub-signin-staff-bar">
+            <span>YFC office employee?</span>
+            <Link to="/staff">Go to Staff ERP Login →</Link>
+          </div>
         </div>
       </main>
     </div>

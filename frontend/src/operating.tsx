@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { request, type RecordData } from "./api";
-import { money, ownedBy, today, val } from "./lib";
+import { money, ownedBy, short, today, val } from "./lib";
 import { Documents } from "./documents";
 import {
   Choices,
@@ -79,11 +79,27 @@ function Fuel({ write, review }: { write: boolean; review: boolean }) {
           <IdField name="entryId" caption="Receipt id" />
           <div className="form-grid">
             <TruckField write={write} />
-            <Field label="Diesel rate id">
-              <input name="rateId" required />
+            <Field label="Diesel rate">
+              <select name="rateId" required>
+                <Choices
+                  path="/api/v1/fuel/rates"
+                  empty="Select diesel rate"
+                  labelOf={(r) =>
+                    `${r.pump} · ${r.effectiveDate ?? r.effective_date} · ₹${r.pricePerLitre ?? r.price_per_litre}/L`
+                  }
+                />
+              </select>
             </Field>
-            <Field label="Trip id (optional)">
-              <input name="tripId" />
+            <Field label="Trip (optional)">
+              <select name="tripId">
+                <Choices
+                  path="/api/v1/trips"
+                  empty="None (truck-only receipt)"
+                  labelOf={(r) =>
+                    `${short(r.id)} · ${r.truck_registration ?? r.truckRegistration ?? r.status} · ${r.planned_date ?? r.plannedDate ?? ""}`
+                  }
+                />
+              </select>
             </Field>
             <Field label="Receipt reference">
               <input name="receiptReference" required maxLength={60} />
@@ -168,8 +184,16 @@ function Expenses({ write, review }: { write: boolean; review: boolean }) {
           <IdField name="expenseId" caption="Expense id" />
           <div className="form-grid">
             <TruckField write={write} />
-            <Field label="Trip id (when required)">
-              <input name="tripId" />
+            <Field label="Trip (when required)">
+              <select name="tripId">
+                <Choices
+                  path="/api/v1/trips"
+                  empty="None (truck expense)"
+                  labelOf={(r) =>
+                    `${short(r.id)} · ${r.truck_registration ?? r.truckRegistration ?? r.status} · ${r.planned_date ?? r.plannedDate ?? ""}`
+                  }
+                />
+              </select>
             </Field>
             <Field label="Category">
               <select name="category">
@@ -294,8 +318,16 @@ function OperatingDetail({
             </Notice>
             <IdField name="allocationId" caption="Allocation id" />
             <div className="form-grid">
-              <Field label="Trip id">
-                <input name="tripId" required />
+              <Field label="Trip">
+                <select name="tripId" required>
+                  <Choices
+                    path="/api/v1/trips"
+                    empty="Select trip"
+                    labelOf={(r) =>
+                      `${short(r.id)} · ${r.truck_registration ?? r.truckRegistration ?? r.status} · ${r.planned_date ?? r.plannedDate ?? ""}`
+                    }
+                  />
+                </select>
               </Field>
               <Field label="Litres">
                 <input name="quantityLitres" type="number" min="0.001" step="0.001" required />
@@ -355,8 +387,16 @@ function FuelRevision({ row }: { row: RecordData }) {
       <IdField name="eventId" caption="Event id" />
       <input type="hidden" name="revision" value={String(val(row, "revision") ?? 1)} />
       <div className="form-grid">
-        <Field label="Diesel rate id">
-          <input name="rateId" required defaultValue={String(val(row, "rateId", "rate_id") ?? "")} />
+        <Field label="Diesel rate">
+          <select name="rateId" required defaultValue={String(val(row, "rateId", "rate_id") ?? "")}>
+            <Choices
+              path="/api/v1/fuel/rates"
+              empty="Select diesel rate"
+              labelOf={(r) =>
+                `${r.pump} · ${r.effectiveDate ?? r.effective_date} · ₹${r.pricePerLitre ?? r.price_per_litre}/L`
+              }
+            />
+          </select>
         </Field>
         <Field label="Filled on">
           <input
@@ -616,6 +656,7 @@ function TruckField({ write }: { write: boolean }) {
 
 function Rates({ admin }: { admin: boolean }) {
   const [id, setId] = useState("");
+  const list = usePaged("fuel-rates", "/api/v1/fuel/rates");
   const rate = useQuery({
     queryKey: ["rate", id],
     queryFn: () => request<RecordData>(`/api/v1/fuel/rates/${id}`),
@@ -628,9 +669,9 @@ function Rates({ admin }: { admin: boolean }) {
   });
   return (
     <>
-      <Notice title="Diesel rates have no list endpoint.">
-        Create a rate, then keep its id. Receipts copy the price at submission; a later correction
-        does not rewrite old receipts.
+      <Notice title="Rate history is preserved on old receipts.">
+        Receipts copy the published price at submission; a later rate correction
+        never rewrites historical receipts.
       </Notice>
       {admin && (
         <SaveForm title="Publish a diesel rate" path="/api/v1/fuel/rates">
@@ -650,39 +691,51 @@ function Rates({ admin }: { admin: boolean }) {
           </div>
         </SaveForm>
       )}
-      <div className="panel form-panel">
-        <Field label="Look up a rate id">
-          <input value={id} onChange={(event) => setId(event.target.value.trim())} />
-        </Field>
-        <ErrorBox error={rate.error || history.error} />
-        <RecordView row={rate.data} />
-        {admin && rate.data && (
-          <SaveForm title="Correct the published price" path={`/api/v1/fuel/rates/${id}/corrections`}>
-            <IdField name="eventId" caption="Event id" />
-            <div className="form-grid">
-              <Field label="Expected current price">
-                <input
-                  name="expectedPrice"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  required
-                  defaultValue={String(val(rate.data, "pricePerLitre", "price_per_litre") ?? "")}
-                />
-              </Field>
-              <Field label="New price">
-                <input name="newPrice" type="number" min="0.01" step="0.01" required />
-              </Field>
-            </div>
-            <Field label="Reason">
-              <textarea name="reason" required maxLength={1000} />
-            </Field>
-          </SaveForm>
-        )}
-        {history.data?.map((row, index) => (
-          <RecordView key={index} row={row} />
-        ))}
+      <ErrorBox error={list.q.error || rate.error || history.error} />
+      <div className="panel">
+        <DataTable
+          rows={list.items}
+          onOpen={(row) => setId(String(row.id))}
+          columns={[
+            { label: "Pump", keys: ["pump"] },
+            { label: "Location", keys: ["location"] },
+            { label: "Effective date", keys: ["effective_date", "effectiveDate"] },
+            { label: "Price ₹ / L", keys: ["price_per_litre", "pricePerLitre"] },
+          ]}
+        />
+        <Pager page={list.page} setPage={list.setPage} hasNext={list.hasNext} />
       </div>
+      {rate.data && (
+        <div className="panel form-panel">
+          <RecordView row={rate.data} />
+          {admin && (
+            <SaveForm title="Correct the published price" path={`/api/v1/fuel/rates/${id}/corrections`}>
+              <IdField name="eventId" caption="Event id" />
+              <div className="form-grid">
+                <Field label="Expected current price">
+                  <input
+                    name="expectedPrice"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    defaultValue={String(val(rate.data, "pricePerLitre", "price_per_litre") ?? "")}
+                  />
+                </Field>
+                <Field label="New price">
+                  <input name="newPrice" type="number" min="0.01" step="0.01" required />
+                </Field>
+              </div>
+              <Field label="Reason">
+                <textarea name="reason" required maxLength={1000} />
+              </Field>
+            </SaveForm>
+          )}
+          {history.data?.map((row, index) => (
+            <RecordView key={index} row={row} />
+          ))}
+        </div>
+      )}
       <ReversalReview />
     </>
   );

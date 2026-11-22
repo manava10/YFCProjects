@@ -11,9 +11,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 class SessionValidityFilter extends OncePerRequestFilter {
   private final AccountRepository accounts;
+  private final PersistentSessionStore persistentSessions;
 
-  SessionValidityFilter(AccountRepository accounts) {
+  SessionValidityFilter(AccountRepository accounts, PersistentSessionStore persistentSessions) {
     this.accounts = accounts;
+    this.persistentSessions = persistentSessions;
   }
 
   @Override
@@ -29,6 +31,7 @@ class SessionValidityFilter extends OncePerRequestFilter {
         SecurityContextHolder.clearContext();
         var session = request.getSession(false);
         if (session != null) session.invalidate();
+        persistentSessions.revoke(request, response);
         response.sendError(401, "Session is no longer valid");
         return;
       }

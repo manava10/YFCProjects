@@ -94,4 +94,10 @@ class PartyFinanceController {
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
     return service.ledger(id, from, to, branchId, page, size);
   }
+
+  @GetMapping("/ageing")
+  Map<String, Object> ageing(
+      @RequestParam LocalDate asOf, @RequestParam(required = false) Type partyType) {
+    return service.ageing(asOf, partyType == null ? null : partyType.name());
+  }
 }

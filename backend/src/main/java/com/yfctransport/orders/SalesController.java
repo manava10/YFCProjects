@@ -82,8 +82,10 @@ class SalesController {
 
   @PostMapping("/quotations/{id}/convert")
   @PreAuthorize("hasAnyRole('SUPER_ADMIN','OPERATIONS')")
-  ResponseEntity<SalesDtos.Conversion> convert(@PathVariable UUID id) {
-    var result = sales.convert(id);
+  ResponseEntity<SalesDtos.Conversion> convert(
+      @PathVariable UUID id,
+      @RequestParam(defaultValue = "false") boolean overrideCreditLimit) {
+    var result = sales.convert(id, overrideCreditLimit);
     return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
         .body(result);
   }

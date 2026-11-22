@@ -10,9 +10,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 class OrderFulfillmentService implements OrderFulfillment {
   private final JdbcTemplate db;
+  private final CustomerCreditCheck creditCheck;
 
-  OrderFulfillmentService(JdbcTemplate db) {
+  OrderFulfillmentService(JdbcTemplate db, CustomerCreditCheck creditCheck) {
     this.db = db;
+    this.creditCheck = creditCheck;
   }
 
   @Override
@@ -75,8 +77,31 @@ class OrderFulfillmentService implements OrderFulfillment {
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public void recordTripDispatch(UUID trip, UUID item, java.math.BigDecimal loaded) {
+  public void recordTripDispatch(
+      UUID trip, UUID item, java.math.BigDecimal loaded, boolean overrideCreditLimit) {
     var line = lockLine(item);
+    var pricing =
+        db.queryForMap(
+            "select o.customer_id,i.material_rate,i.transport_rate from sales_order_items i join"
+                + " sales_orders o on o.id=i.order_id where i.id=?",
+            item);
+    UUID customerId = null;
+    java.math.BigDecimal materialRate = java.math.BigDecimal.ZERO;
+    java.math.BigDecimal transportRate = java.math.BigDecimal.ZERO;
+    for (var entry : pricing.entrySet()) {
+      String k = entry.getKey().toLowerCase(java.util.Locale.ROOT);
+      if ("customer_id".equals(k)) customerId = (UUID) entry.getValue();
+      else if ("material_rate".equals(k) && entry.getValue() != null)
+        materialRate = (java.math.BigDecimal) entry.getValue();
+      else if ("transport_rate".equals(k) && entry.getValue() != null)
+        transportRate = (java.math.BigDecimal) entry.getValue();
+    }
+    java.math.BigDecimal safeLoaded = loaded == null ? java.math.BigDecimal.ZERO : loaded;
+    java.math.BigDecimal tripValue =
+        safeLoaded
+            .multiply(materialRate.add(transportRate))
+            .setScale(2, java.math.RoundingMode.HALF_UP);
+    creditCheck.requireWithinLimit(customerId, tripValue, overrideCreditLimit);
     String reference = "T" + trip.toString().replace("-", "").substring(0, 29);
     db.update(
         "insert into"

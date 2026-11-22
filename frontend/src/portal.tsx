@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut } from "lucide-react";
-import { logout, post, request, type RecordData } from "./api";
+import { Camera, CheckCircle2, FileText, LogOut, Truck, X } from "lucide-react";
+import { logout, post, request, upload, type RecordData } from "./api";
 import { label, money, readForm, short, text, uuid, val } from "./lib";
+import { PrintableChallan, PrintableInvoice } from "./print-docs";
 import {
   Choices,
   ErrorBox,
@@ -21,8 +22,13 @@ export function Join() {
   return (
     <div className="login-layout">
       <section>
-        <div className="brand">YFC / TRANSPORT</div>
-        <p className="eyebrow">REQUEST ACCESS</p>
+        <Link className="brand" to="/">
+          <span className="brandmark">Y</span>
+          <span>
+            YFC<span className="brand-sub">TRANSPORT ERP</span>
+          </span>
+        </Link>
+        <p className="eyebrow" style={{ color: "#93c5fd" }}>REQUEST ACCESS</p>
         <h1>
           Your own
           <br />
@@ -83,7 +89,7 @@ export function Join() {
               Your request is with the administrator and the operations team.
               You can sign in after they approve it.
             </p>
-            <Link to="/staff">Back to sign in</Link>
+            <Link to="/signin">Back to sign in</Link>
           </>
         ) : (
           <>
@@ -161,7 +167,7 @@ export function Join() {
               {busy ? "Sending…" : "Request account"}
             </button>
             <small>
-              <Link to="/staff">Already approved? Sign in</Link>
+              <Link to="/signin">Already approved? Sign in</Link>
             </small>
           </>
         )}
@@ -173,16 +179,24 @@ export function Join() {
 function Decision({
   id,
   action,
-  driver,
+  role,
   onDone,
 }: {
   id: string;
   action: "approve" | "reject";
-  driver: boolean;
+  role: string;
   onDone: () => void;
 }) {
   const client = useQueryClient();
   const [stamp] = useState(uuid);
+  const [existingId, setExistingId] = useState("");
+  const driver = role === "DRIVER";
+  const existingPath =
+    role === "CUSTOMER"
+      ? "/api/v1/customers"
+      : role === "SUPPLIER"
+        ? "/api/v1/suppliers"
+        : "/api/v1/drivers";
   const mutation = useMutation({
     mutationFn: (body: unknown) =>
       post(`/api/v1/account-applications/${id}/${action}`, body),
@@ -196,11 +210,31 @@ function Decision({
       className="decision"
       onSubmit={(event) => {
         event.preventDefault();
-        mutation.mutate({ ...readForm(event.currentTarget), eventId: stamp });
+        const data = readForm(event.currentTarget);
+        if (!data.existingRecordId) delete data.existingRecordId;
+        if (!data.branchId) delete data.branchId;
+        mutation.mutate({ ...data, eventId: stamp });
       }}
     >
       <ErrorBox error={mutation.error} />
-      {action === "approve" && driver && (
+      {action === "approve" && (
+        <Field label={`Link to existing ${label(role).toLowerCase()} (optional — leave blank to create new)`}>
+          <select
+            name="existingRecordId"
+            value={existingId}
+            onChange={(event) => setExistingId(event.target.value)}
+          >
+            <Choices
+              path={existingPath}
+              empty={`Create a new ${label(role).toLowerCase()} record`}
+              labelOf={(row) =>
+                `${val(row, "name")}${val(row, "mobile") ? ` · ${val(row, "mobile")}` : ""}`
+              }
+            />
+          </select>
+        </Field>
+      )}
+      {action === "approve" && driver && !existingId && (
         <Field label="Driver's branch">
           <select name="branchId" required>
             <Choices
@@ -287,7 +321,7 @@ export function AccountRequests() {
                 <Decision
                   id={id}
                   action={open.action}
-                  driver={role === "DRIVER"}
+                  role={role}
                   onDone={() => setOpen(null)}
                 />
               )}
@@ -306,7 +340,7 @@ function Table({
 }: {
   title: string;
   rows?: RecordData[];
-  columns: { label: string; render: (row: RecordData) => string }[];
+  columns: { label: string; render: (row: RecordData) => ReactNode }[];
 }) {
   if (!rows) return null;
   return (
@@ -342,13 +376,36 @@ function Table({
 
 export function ExternalHome({ username }: { username: string }) {
   const [logoutError, setLogoutError] = useState<unknown>(null);
+  const [preview, setPreview] = useState<{ kind: "bill" | "trip"; id: string } | null>(null);
   const client = useQueryClient();
+  const navigate = useNavigate();
   const q = useQuery({
     queryKey: ["portal", username],
     queryFn: () => request<RecordData>("/api/v1/portal"),
   });
+  const docQuery = useQuery({
+    queryKey: ["portal-doc", preview?.kind, preview?.id],
+    queryFn: () =>
+      request<RecordData>(
+        preview?.kind === "bill"
+          ? `/api/v1/portal/bills/${preview.id}`
+          : `/api/v1/portal/trips/${preview?.id}`,
+      ),
+    enabled: !!preview,
+  });
   const role = String(val(q.data, "role") ?? "");
   const profile = (q.data?.profile ?? null) as RecordData | null;
+  const bills = (q.data?.bills as RecordData[] | undefined) ?? [];
+  const trips = (q.data?.trips as RecordData[] | undefined) ?? [];
+  const totalInvoiced = bills.reduce(
+    (sum, b) => sum + Number(val(b, "payable_total", "subtotal") ?? 0),
+    0,
+  );
+  const totalPaid = bills.reduce((sum, b) => sum + Number(val(b, "allocated_amount") ?? 0), 0);
+  const totalOutstanding = bills.reduce(
+    (sum, b) => sum + Number(val(b, "outstanding_amount") ?? 0),
+    0,
+  );
   return (
     <div className="shell">
       <aside>
@@ -359,8 +416,13 @@ export function ExternalHome({ username }: { username: string }) {
           </span>
         </Link>
         <div className="aside-bottom">
-          <strong>{text(val(profile, "name"))}</strong>
-          <small>{label(role)}</small>
+          <span className="avatar">
+            {(text(val(profile, "name"))[0] || username[0] || "U").toUpperCase()}
+          </span>
+          <div>
+            <strong>{text(val(profile, "name")) || username}</strong>
+            <small>{label(role)}</small>
+          </div>
           <button
             className="icon-button"
             aria-label="Sign out"
@@ -370,6 +432,7 @@ export function ExternalHome({ username }: { username: string }) {
                 await logout();
                 client.removeQueries({ predicate: (query) => query.queryKey[0] !== "session" });
                 client.setQueryData(["session"], null);
+                navigate("/signin", { replace: true });
               } catch (error) {
                 setLogoutError(error);
               }
@@ -387,10 +450,63 @@ export function ExternalHome({ username }: { username: string }) {
           <Heading
             eyebrow={label(role).toUpperCase()}
             title="Only your own records."
-            description="Orders, trips and bills shown here belong to this login."
+            description="Orders, trips, delivery challans, and GST tax invoices shown here belong strictly to this login."
           />
-          <ErrorBox error={logoutError || q.error} />
+          <ErrorBox error={logoutError || q.error || docQuery.error} />
           {q.isPending && <p role="status">Loading your records…</p>}
+          {preview && (
+            <div className="portal-doc-preview">
+              <div className="portal-doc-preview-bar no-print">
+                <strong>
+                  {preview.kind === "bill"
+                    ? "Printable GST Tax Invoice / Bill"
+                    : "Printable Delivery Challan"}
+                </strong>
+                <button
+                  type="button"
+                  className="secondary portal-doc-btn"
+                  onClick={() => setPreview(null)}
+                >
+                  <X size={14} /> Close preview
+                </button>
+              </div>
+              {docQuery.isPending && <p role="status">Loading document…</p>}
+              {docQuery.data && preview.kind === "bill" && (
+                <PrintableInvoice bill={docQuery.data} />
+              )}
+              {docQuery.data && preview.kind === "trip" && (
+                <PrintableChallan trip={docQuery.data} />
+              )}
+            </div>
+          )}
+          {(role === "CUSTOMER" || role === "SUPPLIER") && q.data && (
+            <section className="portal-summary no-print" aria-label="Account summary">
+              <div className="portal-kpi">
+                <small>{role === "CUSTOMER" ? "Total Invoiced" : "Total Billed"}</small>
+                <strong>{money(totalInvoiced)}</strong>
+              </div>
+              <div className="portal-kpi">
+                <small>Paid / Settled</small>
+                <strong>{money(totalPaid)}</strong>
+              </div>
+              <div className="portal-kpi">
+                <small>Outstanding Balance</small>
+                <strong>{money(totalOutstanding)}</strong>
+              </div>
+              <div className="portal-kpi">
+                <small>{role === "CUSTOMER" ? "Dispatched Trips" : "Total Bills"}</small>
+                <strong>{role === "CUSTOMER" ? trips.length : bills.length}</strong>
+              </div>
+            </section>
+          )}
+          {role === "DRIVER" && q.data && (
+            <DriverActiveTrips
+              trips={trips.filter(
+                (t) => !["DELIVERED", "CANCELLED"].includes(String(val(t, "status"))),
+              )}
+              onUpdated={() => client.invalidateQueries({ queryKey: ["portal", username] })}
+            />
+          )}
           {profile && (
             <section className="panel">
               <h2>Your details</h2>
@@ -432,13 +548,27 @@ export function ExternalHome({ username }: { username: string }) {
             ]}
           />
           <Table
-            title="Trips"
+            title="Trips & Delivery Challans"
             rows={q.data?.trips as RecordData[] | undefined}
             columns={[
               { label: "Trip", render: (row) => short(String(row.id)) },
               { label: "Material", render: (row) => text(val(row, "material")) },
+              { label: "Truck", render: (row) => text(val(row, "truck_registration")) },
+              { label: "E-Way Bill", render: (row) => text(val(row, "eway_bill_number")) },
               { label: "Status", render: (row) => label(text(val(row, "status"))) },
               { label: "Date", render: (row) => text(val(row, "planned_date")) },
+              {
+                label: "Challan",
+                render: (row) => (
+                  <button
+                    type="button"
+                    className="secondary portal-doc-btn"
+                    onClick={() => setPreview({ kind: "trip", id: String(row.id) })}
+                  >
+                    <Truck size={14} /> Challan / Print
+                  </button>
+                ),
+              },
             ]}
           />
           <Table
@@ -458,11 +588,11 @@ export function ExternalHome({ username }: { username: string }) {
             ]}
           />
           <Table
-            title="Bills"
+            title="Bills & Tax Invoices"
             rows={q.data?.bills as RecordData[] | undefined}
             columns={[
               {
-                label: "Bill",
+                label: "Bill / Invoice",
                 render: (row) =>
                   text(val(row, "invoice_number")) !== "—"
                     ? text(val(row, "invoice_number"))
@@ -475,10 +605,264 @@ export function ExternalHome({ username }: { username: string }) {
                 render: (row) =>
                   money(Number(val(row, "payable_total", "subtotal") ?? 0)),
               },
+              {
+                label: "Paid",
+                render: (row) => money(Number(val(row, "allocated_amount") ?? 0)),
+              },
+              {
+                label: "Outstanding",
+                render: (row) =>
+                  val(row, "outstanding_amount") != null
+                    ? money(Number(val(row, "outstanding_amount")))
+                    : "—",
+              },
+              {
+                label: "Document",
+                render: (row) => (
+                  <button
+                    type="button"
+                    className="secondary portal-doc-btn"
+                    onClick={() => setPreview({ kind: "bill", id: String(row.id) })}
+                  >
+                    <FileText size={14} /> Invoice / Print
+                  </button>
+                ),
+              },
             ]}
           />
         </main>
       </div>
     </div>
+  );
+}
+
+function DriverActiveTrips({
+  trips,
+  onUpdated,
+}: {
+  trips: RecordData[];
+  onUpdated: () => void;
+}) {
+  if (trips.length === 0) {
+    return (
+      <section className="panel no-print">
+        <h2>Active Trip Execution</h2>
+        <p className="muted">No active trips assigned right now. New dispatches will appear here automatically.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="driver-mobile-stack no-print" aria-label="Driver mobile trip execution">
+      {trips.map((trip) => (
+        <DriverTripCard key={String(trip.id)} trip={trip} onUpdated={onUpdated} />
+      ))}
+    </section>
+  );
+}
+
+function DriverTripCard({
+  trip,
+  onUpdated,
+}: {
+  trip: RecordData;
+  onUpdated: () => void;
+}) {
+  const id = String(trip.id);
+  const status = String(val(trip, "status") ?? "");
+  const [uploadError, setUploadError] = useState<unknown>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const docs = useQuery({
+    queryKey: ["driver-trip-docs", id],
+    queryFn: () => request<RecordData[]>(`/api/v1/portal/driver/trips/${id}/documents`),
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: ({ action, body }: { action: string; body: Record<string, unknown> }) =>
+      post(`/api/v1/portal/driver/trips/${id}/${action}`, body),
+    onSuccess: () => onUpdated(),
+  });
+
+  const simpleStep: Record<string, { action: string; label: string }> = {
+    ALLOCATED: { action: "start-loading", label: "Start Loading at Plant / Yard" },
+    LOADED: { action: "dispatch", label: "Confirm Dispatch (On Road)" },
+    DISPATCHED: { action: "arrive", label: "Mark Arrived at Customer Site" },
+    ARRIVED: { action: "start-unloading", label: "Start Unloading" },
+  };
+  const nextSimple = simpleStep[status];
+
+  return (
+    <article className="panel driver-trip-card">
+      <div className="driver-trip-head">
+        <div>
+          <span className="eyebrow">ASSIGNED TRIP · {short(id)}</span>
+          <h3>
+            {text(val(trip, "material"))} · {text(val(trip, "planned_quantity"))} t
+          </h3>
+        </div>
+        <Status value={status} />
+      </div>
+      <div className="driver-trip-meta">
+        <span>
+          <strong>Truck:</strong> {text(val(trip, "truck_registration"))}
+        </span>
+        <span>
+          <strong>Customer:</strong> {text(val(trip, "customer_name"))}
+        </span>
+        <span>
+          <strong>Site:</strong> {text(val(trip, "delivery_site"))}
+        </span>
+        {val(trip, "eway_bill_number") && (
+          <span>
+            <strong>E-Way Bill:</strong> {text(val(trip, "eway_bill_number"))}
+          </span>
+        )}
+      </div>
+
+      <ErrorBox error={actionMutation.error || uploadError} />
+
+      {nextSimple && (
+        <button
+          type="button"
+          className="driver-primary-btn"
+          disabled={actionMutation.isPending}
+          onClick={() =>
+            actionMutation.mutate({
+              action: nextSimple.action,
+              body: { eventId: uuid() },
+            })
+          }
+        >
+          <CheckCircle2 size={16} />{" "}
+          {actionMutation.isPending ? "Updating…" : nextSimple.label}
+        </button>
+      )}
+
+      {status === "LOADING" && (
+        <form
+          className="driver-stage-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            actionMutation.mutate({
+              action: "load",
+              body: {
+                eventId: uuid(),
+                gross: String(form.get("gross") ?? ""),
+                tare: String(form.get("tare") ?? ""),
+                slipReference: String(form.get("slipReference") ?? ""),
+              },
+            });
+          }}
+        >
+          <h4>Record Loaded Weighbridge Weight</h4>
+          <div className="form-grid">
+            <Field label="Gross weight (tonnes)">
+              <input name="gross" type="number" step="0.001" min="0.001" required />
+            </Field>
+            <Field label="Tare weight (tonnes)">
+              <input name="tare" type="number" step="0.001" min="0" required />
+            </Field>
+            <Field label="Weighbridge slip #">
+              <input name="slipReference" maxLength={100} required />
+            </Field>
+          </div>
+          <button disabled={actionMutation.isPending}>
+            {actionMutation.isPending ? "Saving…" : "Save Loaded Weight"}
+          </button>
+        </form>
+      )}
+
+      {status === "UNLOADING" && (
+        <form
+          className="driver-stage-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            const disc = String(form.get("discrepancyReason") ?? "").trim();
+            actionMutation.mutate({
+              action: "deliver",
+              body: {
+                eventId: uuid(),
+                gross: String(form.get("gross") ?? ""),
+                tare: String(form.get("tare") ?? ""),
+                acceptedQuantity: String(form.get("acceptedQuantity") ?? ""),
+                slipReference: String(form.get("slipReference") ?? ""),
+                receiverName: String(form.get("receiverName") ?? ""),
+                proofReference: String(form.get("proofReference") ?? ""),
+                ...(disc ? { discrepancyReason: disc } : {}),
+              },
+            });
+          }}
+        >
+          <h4>Record Delivery &amp; Proof of Delivery (POD)</h4>
+          <div className="form-grid">
+            <Field label="Site gross (t)">
+              <input name="gross" type="number" step="0.001" min="0.001" required />
+            </Field>
+            <Field label="Site tare (t)">
+              <input name="tare" type="number" step="0.001" min="0" required />
+            </Field>
+            <Field label="Accepted qty (t)">
+              <input name="acceptedQuantity" type="number" step="0.001" min="0" required />
+            </Field>
+            <Field label="Delivery slip #">
+              <input name="slipReference" maxLength={100} required />
+            </Field>
+            <Field label="Site receiver name">
+              <input name="receiverName" maxLength={160} required />
+            </Field>
+            <Field label="POD / Challan ref">
+              <input name="proofReference" maxLength={300} required />
+            </Field>
+          </div>
+          <Field label="Shortage / discrepancy reason (if weights differ)">
+            <input name="discrepancyReason" maxLength={1000} />
+          </Field>
+          <button disabled={actionMutation.isPending}>
+            {actionMutation.isPending ? "Submitting…" : "Complete Delivery"}
+          </button>
+        </form>
+      )}
+
+      <div className="driver-upload-box">
+        <label className="driver-upload-label">
+          <Camera size={16} />{" "}
+          {uploading
+            ? "Uploading slip / POD…"
+            : "Upload Weighbridge Slip or POD Photo (JPEG / PNG / PDF, max 2 MB)"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,application/pdf"
+            capture="environment"
+            disabled={uploading}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setUploading(true);
+              setUploadError(null);
+              try {
+                const fd = new FormData();
+                fd.append("documentId", uuid());
+                fd.append("file", file);
+                await upload(`/api/v1/portal/driver/trips/${id}/documents`, fd);
+                await docs.refetch();
+              } catch (err) {
+                setUploadError(err);
+              } finally {
+                setUploading(false);
+                e.target.value = "";
+              }
+            }}
+          />
+        </label>
+        {docs.data && docs.data.length > 0 && (
+          <p className="muted" style={{ margin: "6px 0 0", fontSize: 12.5 }}>
+            Attached ({docs.data.length}):{" "}
+            {docs.data.map((d) => String(d.filename)).join(", ")}
+          </p>
+        )}
+      </div>
+    </article>
   );
 }

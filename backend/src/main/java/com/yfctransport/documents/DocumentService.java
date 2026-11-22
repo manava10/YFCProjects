@@ -17,27 +17,30 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional
-class DocumentService {
+class DocumentService implements TripDocumentUploader {
   static final int MAX_SIZE = 2097152;
   private static final String METADATA =
-      "id,target_type,target_id,filename,media_type,byte_size,sha256,uploaded_by,uploaded_at";
+      "id,target_type,target_id,filename,media_type,byte_size,sha256,storage_backend,uploaded_by,uploaded_at";
   private final JdbcTemplate db;
   private final LogisticsEvidence logistics;
   private final OperatingEvidence operating;
   private final InventoryEvidence inventory;
   private final AuditTrail audit;
+  private final DocumentBlobRouter blobs;
 
   DocumentService(
       JdbcTemplate db,
       LogisticsEvidence logistics,
       OperatingEvidence operating,
       InventoryEvidence inventory,
-      AuditTrail audit) {
+      AuditTrail audit,
+      DocumentBlobRouter blobs) {
     this.db = db;
     this.logistics = logistics;
     this.operating = operating;
     this.inventory = inventory;
     this.audit = audit;
+    this.blobs = blobs;
   }
 
   private String actor() {
@@ -154,20 +157,36 @@ class DocumentService {
             type.name(),
             target)
         >= 30) throw fail(HttpStatus.CONFLICT, "Maximum 30 documents per record reached");
-    db.update(
-        "insert into"
-            + " private_documents(id,target_type,target_id,filename,media_type,byte_size,sha256,content,uploaded_by)"
-            + " values(?,?,?,?,?,?,?,?,?)",
-        id,
-        type.name(),
-        target,
-        name,
-        media,
-        bytes.length,
-        digest,
-        bytes,
-        actor());
-    audit.record("DOCUMENT_UPLOADED", "DOCUMENT", id, "Target=" + type + "/" + target);
+    String backend = blobs.activeBackend();
+    String storageKey = null;
+    byte[] dbContent = bytes;
+    if (!"DATABASE".equals(backend)) {
+      storageKey = blobs.storeExternal(id, type.name(), name, media, bytes);
+      dbContent = null;
+    }
+    try {
+      db.update(
+          "insert into"
+              + " private_documents(id,target_type,target_id,filename,media_type,byte_size,sha256,"
+              + " storage_backend,storage_key,content,uploaded_by)"
+              + " values(?,?,?,?,?,?,?,?,?,?,?)",
+          id,
+          type.name(),
+          target,
+          name,
+          media,
+          bytes.length,
+          digest,
+          backend,
+          storageKey,
+          dbContent,
+          actor());
+    } catch (RuntimeException ex) {
+      if (storageKey != null) blobs.deleteExternalQuietly(backend, storageKey);
+      throw ex;
+    }
+    audit.record(
+        "DOCUMENT_UPLOADED", "DOCUMENT", id, "Target=" + type + "/" + target + " storage=" + backend);
     var result = get(id);
     result.put("replayed", false);
     return result;
@@ -224,11 +243,29 @@ class DocumentService {
   record Download(String filename, String mediaType, byte[] bytes) {}
 
   Download download(UUID id) {
-    var metadata = get(id);
+    var rows =
+        db.queryForList(
+            "select filename,media_type,storage_backend,storage_key,content from private_documents"
+                + " where id=?",
+            id);
+    if (rows.isEmpty()) throw fail(HttpStatus.NOT_FOUND, "Document not found");
+    var row = view(rows.getFirst());
+    String backend = (String) row.get("storageBackend");
     byte[] bytes =
-        db.queryForObject("select content from private_documents where id=?", byte[].class, id);
+        "DATABASE".equals(backend)
+            ? (byte[]) row.get("content")
+            : blobs.readExternal(backend, (String) row.get("storageKey"));
     audit.record("DOCUMENT_DOWNLOADED", "DOCUMENT", id, "Authenticated staff download");
-    return new Download(
-        (String) metadata.get("filename"), (String) metadata.get("mediaType"), bytes);
+    return new Download((String) row.get("filename"), (String) row.get("mediaType"), bytes);
+  }
+
+  @Override
+  public Map<String, Object> uploadTripDocument(UUID documentId, UUID tripId, MultipartFile file) {
+    return upload(documentId, DocumentController.Target.TRIP, tripId, file);
+  }
+
+  @Override
+  public List<Map<String, Object>> listTripDocuments(UUID tripId) {
+    return list(DocumentController.Target.TRIP, tripId);
   }
 }

@@ -53,8 +53,11 @@ class InventoryController {
   @GetMapping("/purchases")
   List<Map<String, Object>> purchases(
       @RequestParam(defaultValue = "0") @Min(0) int page,
-      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-    return inventory.list("purchase_orders", page, size);
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+      @RequestParam(required = false) @Size(max = 120) String q,
+      @RequestParam(required = false) @Size(max = 30) String status,
+      @RequestParam(required = false) UUID branchId) {
+    return inventory.listPurchases(page, size, q, status, branchId);
   }
 
   @PostMapping("/purchases/{id}/close")
@@ -118,6 +121,13 @@ class InventoryController {
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
     return inventory.movements(yardId, materialId, page, size);
+  }
+
+  @GetMapping("/purchase-receipts")
+  List<Map<String, Object>> purchaseReceipts(
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return inventory.purchaseReceipts(page, size);
   }
 
   @GetMapping("/stock-reservations")

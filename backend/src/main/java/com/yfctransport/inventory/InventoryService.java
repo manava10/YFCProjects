@@ -119,6 +119,51 @@ class InventoryService implements TripSupply {
   }
 
   @Transactional(readOnly = true)
+  List<Map<String, Object>> listPurchases(
+      int page, int size, String q, String status, UUID branchId) {
+    var where = new StringBuilder(" where 1=1");
+    var args = new ArrayList<Object>();
+    if (status != null && !status.isBlank()) {
+      where.append(" and status=?");
+      args.add(status.strip().toUpperCase(Locale.ROOT));
+    }
+    if (branchId != null) {
+      where.append(" and branch_id=?");
+      args.add(branchId);
+    }
+    if (q != null && !q.isBlank()) {
+      String like = "%" + q.strip().toLowerCase(Locale.ROOT) + "%";
+      where.append(
+          " and (lower(coalesce(material_name,'')) like ?"
+              + " or lower(coalesce(supplier_name,'')) like ?"
+              + " or lower(coalesce(plant_name,'')) like ?)");
+      args.add(like);
+      args.add(like);
+      args.add(like);
+    }
+    args.add(size);
+    args.add((long) page * size);
+    return normalized(
+        db.queryForList(
+            "select * from purchase_orders"
+                + where
+                + " order by created_at desc,id desc limit ? offset ?",
+            args.toArray()));
+  }
+
+  @Transactional(readOnly = true)
+  List<Map<String, Object>> purchaseReceipts(int page, int size) {
+    return normalized(
+        db.queryForList(
+            "select r.id,r.purchase_id,r.received_date,r.loaded_quantity,r.received_quantity,"
+                + " r.accepted_quantity,r.reference,r.created_at,p.supplier_name,p.material_name"
+                + " from purchase_receipts r join purchase_orders p on p.id=r.purchase_id"
+                + " order by r.created_at desc,r.id desc limit ? offset ?",
+            size,
+            (long) page * size));
+  }
+
+  @Transactional(readOnly = true)
   Map<String, Object> purchase(UUID id) {
     var p = one("purchase_orders", id, false);
     p.put("currency", "INR");
