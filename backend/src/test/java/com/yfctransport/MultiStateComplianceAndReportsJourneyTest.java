@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import org.junit.jupiter.api.*;
@@ -184,7 +185,7 @@ class MultiStateComplianceAndReportsJourneyTest {
     String matId = JsonPath.read(matJson, "$.id");
 
     // Create RFQ -> Quotation -> Order
-    String today = LocalDate.now().toString();
+    String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
     String rfqJson =
         mvc.perform(
                 post("/api/v1/rfqs")
@@ -195,7 +196,7 @@ class MultiStateComplianceAndReportsJourneyTest {
                             Map.of(
                                 "customerId", hrCustomerId,
                                 "deliverySiteId", siteId,
-                                "requiredDate", LocalDate.now().plusDays(2).toString(),
+                                "requiredDate", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(2).toString(),
                                 "businessType", "MATERIAL_AND_TRANSPORT",
                                 "items", List.of(Map.of("materialId", matId, "quantity", "20.000"))))))
             .andExpect(status().isCreated())
@@ -213,7 +214,7 @@ class MultiStateComplianceAndReportsJourneyTest {
                     .content(
                         json.writeValueAsString(
                             Map.of(
-                                "validUntil", LocalDate.now().plusDays(7).toString(),
+                                "validUntil", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(7).toString(),
                                 "paymentTerms", "15 days net",
                                 "deliveryTerms", "Ex-Kotputli delivered Gurugram",
                                 "items",
@@ -382,10 +383,10 @@ class MultiStateComplianceAndReportsJourneyTest {
                             "truckType", "TIPPER",
                             "rcNumber", "RC-" + code("T"),
                             "insuranceNumber", "INS-" + code("T"),
-                            "insuranceExpiry", LocalDate.now().plusYears(1).toString(),
-                            "fitnessExpiry", LocalDate.now().plusYears(1).toString(),
-                            "permitExpiry", LocalDate.now().plusYears(1).toString(),
-                            "pollutionExpiry", LocalDate.now().plusYears(1).toString(),
+                            "insuranceExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "fitnessExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "permitExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "pollutionExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
                             "status", "ACTIVE"))))
         .andExpect(status().isOk());
 
@@ -401,7 +402,7 @@ class MultiStateComplianceAndReportsJourneyTest {
                                 "name", "Ramesh Driver",
                                 "mobile", "9811122233",
                                 "licenseNumber", "RJ14-" + code("DL"),
-                                "licenseExpiry", LocalDate.now().plusYears(2).toString(),
+                                "licenseExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(2).toString(),
                                 "emergencyContact", "Suresh",
                                 "emergencyMobile", "9811122244",
                                 "active", true))))
@@ -422,7 +423,7 @@ class MultiStateComplianceAndReportsJourneyTest {
                             Map.of(
                                 "customerId", hrCustomerId,
                                 "deliverySiteId", siteId,
-                                "requiredDate", LocalDate.now().plusDays(1).toString(),
+                                "requiredDate", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(1).toString(),
                                 "businessType", "TRANSPORT",
                                 "items", List.of(Map.of("materialId", matId, "quantity", "20.000"))))))
             .andExpect(status().isCreated())
@@ -439,7 +440,7 @@ class MultiStateComplianceAndReportsJourneyTest {
                     .content(
                         json.writeValueAsString(
                             Map.of(
-                                "validUntil", LocalDate.now().plusDays(5).toString(),
+                                "validUntil", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(5).toString(),
                                 "paymentTerms", "Immediate",
                                 "deliveryTerms", "Tipper transport",
                                 "items",

@@ -21,6 +21,7 @@
 11. [Phase 9 — Day-2 Operations, Backups, Data Migration & Troubleshooting](#11-phase-9--day-2-operations-backups-data-migration--troubleshooting)
 12. [Appendix A — Complete Environment Variable Reference](#12-appendix-a--complete-environment-variable-reference)
 13. [Appendix B — Switching RDS from Password Auth to IAM Auth Later](#13-appendix-b--switching-rds-from-password-auth-to-iam-auth-later)
+14. [Appendix C — Automated CI/CD Auto-Deploy via GitHub Actions (S3 + AWS SSM + OIDC)](#14-appendix-c--automated-cicd-auto-deploy-via-github-actions-s3--aws-ssm--oidc)
 
 ---
 
@@ -1260,3 +1261,149 @@ sudo systemctl restart yfc-backend
 sudo journalctl -u yfc-backend -f
 ```
 `IamDatabaseConfiguration.java` will automatically initialize `yfc-iam-pool`, pull EC2 IMDSv2 credentials via `DefaultCredentialsProvider`, and mint a fresh IAM token for every new physical database connection with zero code changes.
+
+
+---
+
+## 14. Appendix C — Automated CI/CD Auto-Deploy via GitHub Actions (S3 + AWS SSM + OIDC)
+
+This repository includes a ready-to-use automated deployment pipeline:
+- **Workflow:** `.github/workflows/deploy-ec2.yml`
+- **EC2 release script:** `deploy/ec2/apply-release.sh`
+
+Whenever you run `git push origin main` (or trigger the workflow manually from the GitHub **Actions** tab), GitHub automatically:
+1. Runs the full backend test suite against PostgreSQL 17 + H2 (`mvn -B -f backend/pom.xml clean verify`) and packages `yfc-backend.jar`.
+2. Runs frontend dependency install (`npm ci`), unit tests (`npm test`), TypeScript check, and Vite production build (`npm run build`), archiving `frontend/dist/`.
+3. **Only if BOTH jobs pass**, authenticates to AWS using **short-lived GitHub OIDC tokens** (zero static AWS keys, zero SSH keys!).
+4. Uploads `yfc-backend.jar`, `frontend-dist.tar.gz`, and `deploy/ec2/apply-release.sh` to your private S3 bucket under `deployments/<timestamp>-<commit>/`.
+5. Invokes **AWS Systems Manager (`AWS-RunShellScript`)** on your EC2 instance to download the release from S3, atomically activate `/opt/yfc/current.jar`, restart `yfc-backend`, poll `http://127.0.0.1:8080/actuator/health` until `{"status":"UP"}` (auto-rolling back the backend JAR if unhealthy!), sync `/var/www/yfc/`, and retain the newest 5 JARs.
+
+### Why S3 + AWS SSM + OIDC instead of SSH (`scp`/`rsync`) from GitHub Actions?
+- **No port 22 open to `0.0.0.0/0`:** GitHub-hosted runners use dynamic Azure IPs that change every run. Using SSH from GitHub would force you to open port 22 to the entire internet (contradicting our hardened `yfc-ec2-sg`). AWS SSM communicates over an outbound HTTPS channel initiated by `amazon-ssm-agent` inside EC2—**zero inbound ports needed!**
+- **Zero static secrets in GitHub:** No `.pem` SSH private key and no permanent `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` stored in GitHub Secrets. GitHub OIDC mints a temporary IAM session valid only for that workflow run.
+- **Automatic rollback on bad boot:** If a release fails to pass `/actuator/health` within 90 seconds, `apply-release.sh` automatically prints the last 80 lines of `journalctl -u yfc-backend` straight into GitHub Actions logs and rolls `/opt/yfc/current.jar` back to the previous working JAR without touching the live frontend.
+
+---
+
+### One-Time Setup (Takes ~10 Minutes)
+
+#### Step 1 — Install AWS CLI v2 & `rsync` on EC2 (and Verify SSM Agent)
+SSH into EC2 once and run:
+```bash
+sudo apt install -y rsync
+sudo snap install aws-cli --classic
+aws --version
+sudo systemctl status snap.amazon-ssm-agent.amazon-ssm-agent.service --no-pager
+```
+- **Why `snap install aws-cli --classic`?** Official Ubuntu 24.04 EC2 AMIs preinstall `snapd` and `amazon-ssm-agent`, and the snap package installs official AWS CLI v2 cleanly on both ARM64 (`t4g.small`) and x86_64 (`t3.small`).
+
+#### Step 2 — Update EC2's IAM Role (`yfc-ec2-role`)
+In AWS Console → **IAM → Roles → `yfc-ec2-role` → Permissions**:
+1. Click **Add permissions → Attach policies** → search and attach **`AmazonSSMManagedInstanceCore`**.
+   - *(This allows EC2 to register as a managed node in AWS Systems Manager. Within ~2 minutes, verify it appears under **AWS Systems Manager → Fleet Manager** with Ping status = **Online**.)*
+2. Click **Add permissions → Create inline policy → JSON** and name it `yfc-ec2-deploy-read-policy`:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "YfcReadDeploymentArtifacts",
+         "Effect": "Allow",
+         "Action": ["s3:GetObject"],
+         "Resource": "arn:aws:s3:::yfc-prod-documents-<your-account-id>/deployments/*"
+       }
+     ]
+   }
+   ```
+   - *(Notice we reuse the same private S3 bucket under a separate `deployments/*` prefix, completely isolated from `yfc-documents/*`!)*
+3. *(Optional, recommended for cost hygiene)* In **S3 → your bucket → Management → Create lifecycle rule**:
+   - Prefix: `deployments/`
+   - Action: **Expire current versions of objects** after **`30` days** (and noncurrent versions after `7` days) so old release archives clean themselves up automatically.
+
+#### Step 3 — Add GitHub as an OIDC Identity Provider in AWS IAM (Once per AWS Account)
+In AWS Console → **IAM → Identity providers → Add provider**:
+- **Provider type**: **OpenID Connect**
+- **Provider URL**: `https://token.actions.githubusercontent.com`
+- **Audience**: `sts.amazonaws.com`
+- Click **Add provider**.
+
+#### Step 4 — Create the GitHub Deploy IAM Role (`yfc-github-deploy-role`)
+In AWS Console → **IAM → Roles → Create role**:
+1. **Trusted entity type**: **Custom trust policy**.
+2. Paste this trust policy (replace `<your-account-id>` with your 12-digit AWS account ID):
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": {
+           "Federated": "arn:aws:iam::<your-account-id>:oidc-provider/token.actions.githubusercontent.com"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {
+             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+             "token.actions.githubusercontent.com:sub": "repo:manava10/YFCProjects:environment:production"
+           }
+         }
+       }
+     ]
+   }
+   ```
+   > **CRITICAL OIDC DETAIL:** Because `.github/workflows/deploy-ec2.yml` sets `environment: production` on the `deploy-to-ec2` job, GitHub sets the OIDC `sub` claim to `repo:manava10/YFCProjects:environment:production` (NOT `ref:refs/heads/main`). Matching that exact string ensures AWS STS accepts the token—and locking the `production` GitHub environment to branch `main` (Step 5 below) guarantees no other branch or PR can assume this role.
+3. Click **Next**, skip managed policies, click **Next**, name the role **`yfc-github-deploy-role`**, and click **Create role**.
+4. Open **`yfc-github-deploy-role` → Add permissions → Create inline policy → JSON**, name it `yfc-github-deploy-policy`, and paste (replacing `<your-account-id>`, `<your-aws-region>`, `<your-ec2-instance-id>`):
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "UploadReleaseArtifacts",
+         "Effect": "Allow",
+         "Action": ["s3:PutObject"],
+         "Resource": "arn:aws:s3:::yfc-prod-documents-<your-account-id>/deployments/*"
+       },
+       {
+         "Sid": "TriggerDeployOnSpecificEc2",
+         "Effect": "Allow",
+         "Action": ["ssm:SendCommand"],
+         "Resource": [
+           "arn:aws:ssm:<your-aws-region>::document/AWS-RunShellScript",
+           "arn:aws:ec2:<your-aws-region>:<your-account-id>:instance/<your-ec2-instance-id>"
+         ]
+       },
+       {
+         "Sid": "PollDeployCommandResult",
+         "Effect": "Allow",
+         "Action": ["ssm:GetCommandInvocation"],
+         "Resource": "*"
+       }
+     ]
+   }
+   ```
+   - *(Notice GitHub Actions can ONLY upload to `deployments/*` and run SSM on that exact EC2 instance ID—it cannot read your customer documents under `yfc-documents/*`, cannot access RDS, and cannot touch any other EC2 instance!)*
+5. Copy the Role **ARN** (e.g., `arn:aws:iam::123456789012:role/yfc-github-deploy-role`).
+
+#### Step 5 — Configure the `production` Environment in GitHub
+In GitHub → **Repository (`manava10/YFCProjects`) → Settings → Environments → New environment**:
+1. Name it **`production`** (exact lowercase spelling).
+2. Under **Deployment branches and tags**, select **Selected branches and tags** → add branch rule **`main`**.
+   - *(Optional: you can also enable **Required reviewers** if you want a manual "Approve deploy" button in GitHub before production updates!)*
+3. Add **2 Environment Secrets** (Settings → Environments → `production` → **Add environment secret**):
+   - `AWS_DEPLOY_ROLE_ARN` = `arn:aws:iam::<your-account-id>:role/yfc-github-deploy-role`
+   - `EC2_INSTANCE_ID` = `i-0xxxxxxxxxxxxxxxx` *(your EC2 Instance ID from EC2 Console)*
+4. Add **2 Environment Variables** (Settings → Environments → `production` → **Add environment variable**):
+   - `AWS_REGION` = e.g. `ap-south-2` *(must match your EC2/S3/RDS region)*
+   - `S3_DEPLOY_BUCKET` = `yfc-prod-documents-<your-account-id>`
+
+#### Step 6 — Push to `main` and Watch It Deploy!
+```bash
+git push origin main
+```
+Open **GitHub → Actions → Deploy to AWS EC2** to watch:
+1. `Test & Build Backend JAR` (runs full PostgreSQL 17 + H2 test suite + packages JAR)
+2. `Test & Build Frontend Bundle` (runs `npm ci`, `npm test`, `npm run build`)
+3. `Deploy to EC2 via S3 + AWS SSM` (uploads to S3 via OIDC, runs `apply-release.sh` on EC2, prints EC2 stdout/stderr, verifies `{"status":"UP"}`!)
+
+*(You can also trigger a deployment any time without making a code commit via **GitHub → Actions → Deploy to AWS EC2 → Run workflow**.)*

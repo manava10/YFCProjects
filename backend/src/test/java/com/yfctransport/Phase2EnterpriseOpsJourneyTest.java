@@ -9,6 +9,7 @@ import com.jayway.jsonpath.JsonPath;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,7 @@ class Phase2EnterpriseOpsJourneyTest {
 
   @Test
   void maintenanceDriverMobileAlertsAndGstCreditNotesWorkEndToEnd() throws Exception {
-    String today = LocalDate.now().toString();
+    String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
 
     // 1. Setup Rajasthan Branch (GSTIN 08), Haryana Customer (GSTIN 06), Project, Site, Material
     String brJson =
@@ -168,10 +169,10 @@ class Phase2EnterpriseOpsJourneyTest {
                             "truckType", "12-WHEELER TIPPER",
                             "rcNumber", "RC-" + code("R"),
                             "insuranceNumber", "IN-" + code("I"),
-                            "insuranceExpiry", LocalDate.now().plusDays(12).toString(),
-                            "fitnessExpiry", LocalDate.now().plusYears(1).toString(),
-                            "permitExpiry", LocalDate.now().plusYears(1).toString(),
-                            "pollutionExpiry", LocalDate.now().plusMonths(6).toString(),
+                            "insuranceExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(12).toString(),
+                            "fitnessExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "permitExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "pollutionExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusMonths(6).toString(),
                             "status", "ACTIVE"))))
         .andExpect(status().isOk());
 
@@ -187,7 +188,7 @@ class Phase2EnterpriseOpsJourneyTest {
                             "category", "TYRE",
                             "serviceDate", today,
                             "odometerKm", 62000,
-                            "nextDueDate", LocalDate.now().plusDays(10).toString(),
+                            "nextDueDate", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(10).toString(),
                             "nextDueOdometerKm", 62500,
                             "vendorName", "Apollo Tyre Care Kotputli",
                             "invoiceReference", "ATC-909",
@@ -227,7 +228,7 @@ class Phase2EnterpriseOpsJourneyTest {
                                 "name", "Rajesh Driver",
                                 "mobile", "9812345670",
                                 "licenseNumber", "RJ32-" + code("DL"),
-                                "licenseExpiry", LocalDate.now().plusYears(2).toString(),
+                                "licenseExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(2).toString(),
                                 "emergencyContact", "Karan",
                                 "emergencyMobile", "9812345671"))))
             .andExpect(status().isCreated())
@@ -266,7 +267,7 @@ class Phase2EnterpriseOpsJourneyTest {
                                 "name", "Other Driver",
                                 "mobile", "9812345699",
                                 "licenseNumber", "RJ32-" + code("DL"),
-                                "licenseExpiry", LocalDate.now().plusYears(2).toString(),
+                                "licenseExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(2).toString(),
                                 "emergencyContact", "Vijay",
                                 "emergencyMobile", "9812345698"))))
             .andExpect(status().isCreated())
@@ -311,7 +312,7 @@ class Phase2EnterpriseOpsJourneyTest {
                     .content(
                         json.writeValueAsString(
                             Map.of(
-                                "validUntil", LocalDate.now().plusDays(5).toString(),
+                                "validUntil", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(5).toString(),
                                 "paymentTerms", "Immediate",
                                 "deliveryTerms", "Tipper",
                                 "items",

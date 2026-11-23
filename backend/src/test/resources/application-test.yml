@@ -3,6 +3,10 @@ spring:
     url: jdbc:h2:mem:yfc;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
     username: sa
     password:
+    hikari:
+      maximum-pool-size: 4
+      minimum-idle: 1
+      idle-timeout: 10000
   jpa:
     hibernate:
       ddl-auto: validate
@@ -10,6 +14,7 @@ spring:
 yfc:
   database:
     auth-mode: password
+    maximum-pool-size: 4
   rate-limit:
     enabled: true
     login-per-minute: 500

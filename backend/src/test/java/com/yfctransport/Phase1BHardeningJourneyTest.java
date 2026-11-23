@@ -9,6 +9,7 @@ import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -111,7 +112,7 @@ class Phase1BHardeningJourneyTest {
   @Test
   @WithMockUser(username = "p1b-admin", roles = "SUPER_ADMIN")
   void serverSideFiltersAndPortalInvoiceChallanWithIdorProtectionWork() throws Exception {
-    String today = LocalDate.now().toString();
+    String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
 
     // 1. Create Rajasthan Branch with GSTIN + Bank
     String brJson =
@@ -276,7 +277,7 @@ class Phase1BHardeningJourneyTest {
                             Map.of(
                                 "customerId", customer1Id,
                                 "deliverySiteId", siteId,
-                                "requiredDate", LocalDate.now().plusDays(1).toString(),
+                                "requiredDate", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(1).toString(),
                                 "businessType", "TRANSPORT",
                                 "items", List.of(Map.of("materialId", matId, "quantity", "25.000"))))))
             .andExpect(status().isCreated())
@@ -294,7 +295,7 @@ class Phase1BHardeningJourneyTest {
                     .content(
                         json.writeValueAsString(
                             Map.of(
-                                "validUntil", LocalDate.now().plusDays(5).toString(),
+                                "validUntil", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(5).toString(),
                                 "paymentTerms", "15 days",
                                 "deliveryTerms", "Tipper",
                                 "items",
@@ -434,10 +435,10 @@ class Phase1BHardeningJourneyTest {
                             "truckType", "TIPPER",
                             "rcNumber", "RC-" + code("P"),
                             "insuranceNumber", "IN-" + code("P"),
-                            "insuranceExpiry", LocalDate.now().plusYears(1).toString(),
-                            "fitnessExpiry", LocalDate.now().plusYears(1).toString(),
-                            "permitExpiry", LocalDate.now().plusYears(1).toString(),
-                            "pollutionExpiry", LocalDate.now().plusYears(1).toString(),
+                            "insuranceExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "fitnessExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "permitExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
+                            "pollutionExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(1).toString(),
                             "status", "ACTIVE"))))
         .andExpect(status().isOk());
     String driverJson =
@@ -452,7 +453,7 @@ class Phase1BHardeningJourneyTest {
                                 "name", "Vikram " + c1Tag,
                                 "mobile", "9811199900",
                                 "licenseNumber", "RJ14-" + code("DR"),
-                                "licenseExpiry", LocalDate.now().plusYears(2).toString(),
+                                "licenseExpiry", LocalDate.now(ZoneId.of("Asia/Kolkata")).plusYears(2).toString(),
                                 "emergencyContact", "Mohan",
                                 "emergencyMobile", "9811199911",
                                 "active", true))))
